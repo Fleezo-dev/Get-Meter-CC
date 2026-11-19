@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.ui.components.VendorLogoBadge
+import com.example.ui.theme.LocalGetTaxiColors
 import com.example.util.PdfGenerator
 import com.example.util.SangamTariffCalculator
 import com.example.util.SangamTariffConfig
@@ -45,15 +46,7 @@ import com.example.viewmodel.MeterViewModel
 import java.io.File
 import java.util.Locale
 
-private val SettleBlack = Color(0xFF090A0C)
-private val SettleCharcoal = Color(0xFF14171C)
-private val SettleCard = Color(0xFF1E222A)
-private val SettleBorder = Color(0xFF2D333E)
-private val SettleYellow = Color(0xFFFFC107)
-private val SettleWhite = Color(0xFFFFFFFF)
-private val SettleMuted = Color(0xFF9CA3AF)
 private val SettleAmber = Color(0xFFF59E0B)
-private val SettleGreen = Color(0xFF22C55E)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,8 +55,12 @@ fun TripSettlementScreen(
     onDoneClearAndReturnHome: () -> Unit
 ) {
     val context = LocalContext.current
+    val colors = LocalGetTaxiColors.current
     val settlement by viewModel.currentSettlement.collectAsStateWithLifecycle()
     val driverProfile by viewModel.driverProfile.collectAsStateWithLifecycle()
+
+    val isDirectSession = settlement?.breakdown?.isDirectMeter == true ||
+        settlement?.tripEntity?.meterMode.equals(SangamTariffConfig.METER_MODE_DIRECT, ignoreCase = true)
 
     var showCustomerEditor by remember { mutableStateOf(false) }
     var ccTransferConfirmed by remember { mutableStateOf(false) }
@@ -87,8 +84,8 @@ fun TripSettlementScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "TRIP SETTLEMENT",
-                        color = SettleWhite,
+                        text = if (isDirectSession) "DIRECT METER INVOICE" else "TRIP SETTLEMENT",
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Black,
                         fontSize = 18.sp,
                         letterSpacing = 0.8.sp
@@ -105,18 +102,18 @@ fun TripSettlementScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back and Clear",
-                            tint = SettleYellow
+                            tint = colors.primaryAccent
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = SettleCharcoal)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface)
             )
         },
-        containerColor = SettleCharcoal,
+        containerColor = colors.background,
         bottomBar = {
             Surface(
-                color = SettleBlack,
-                border = BorderStroke(1.dp, SettleBorder)
+                color = colors.surface,
+                border = BorderStroke(1.dp, colors.border)
             ) {
                 Box(
                     modifier = Modifier
@@ -130,8 +127,8 @@ fun TripSettlementScreen(
                             onDoneClearAndReturnHome()
                         },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = SettleYellow,
-                            contentColor = SettleBlack
+                            containerColor = colors.primaryAccent,
+                            contentColor = colors.onPrimaryAccent
                         ),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
@@ -162,7 +159,7 @@ fun TripSettlementScreen(
             ) {
                 Text(
                     text = "No active settlement session.",
-                    color = SettleMuted,
+                    color = colors.textSecondary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -172,7 +169,19 @@ fun TripSettlementScreen(
 
         val trip = active.tripEntity
         val breakdown = active.breakdown
-        val categoryLabel = if (breakdown.isInnovaCrysta) "INNOVA CRYSTA" else breakdown.vehicleCategory.displayName
+        val isDirectMeter = breakdown.isDirectMeter ||
+            trip.meterMode.equals(SangamTariffConfig.METER_MODE_DIRECT, ignoreCase = true)
+        val directCatLabel = (breakdown.directCategory
+            ?: SangamTariffConfig.DirectMeterCategory.fromId(trip.directCategoryId)).displayName
+        val categoryLabel = if (isDirectMeter) {
+            "DIRECT METER"
+        } else if (breakdown.isInnovaCrysta) {
+            "INNOVA CRYSTA"
+        } else {
+            breakdown.vehicleCategory.displayName
+        }
+        val tripModeBadgeLabel = if (isDirectMeter) directCatLabel else breakdown.tripType.displayName
+
         val cleanDriverId = driverProfile?.driverId?.trim().orEmpty()
         val resolvedDriverName = driverProfile?.driverName?.takeIf { it.isNotBlank() }
             ?: trip.driverName.ifBlank { "GET TAXI Driver" }
@@ -216,12 +225,12 @@ fun TripSettlementScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Local Trip History Persistence Status Banner
+            // Trip History Persistence Status Banner
             if (active.saveError != null && active.persistedTripId == null) {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF3F1212)),
+                    colors = CardDefaults.cardColors(containerColor = if (colors.isDark) Color(0xFF3F1212) else Color(0xFFFEF2F2)),
                     shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.5.dp, Color(0xFFEF4444)),
+                    border = BorderStroke(1.5.dp, colors.redDanger),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("trip_save_error_banner")
@@ -231,24 +240,24 @@ fun TripSettlementScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = colors.redDanger, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "LOCAL SAVE FAILED — TRIP DATA PRESERVED",
-                                color = Color(0xFFF87171),
+                                text = "TRIP SAVE FAILED — DATA PRESERVED",
+                                color = colors.redDanger,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Black
                             )
                         }
                         Text(
                             text = active.saveError,
-                            color = SettleWhite,
+                            color = colors.textPrimary,
                             fontSize = 12.sp,
                             lineHeight = 16.sp
                         )
                         Button(
                             onClick = { viewModel.retrySaveCurrentSettlement() },
-                            colors = ButtonDefaults.buttonColors(containerColor = SettleYellow, contentColor = SettleBlack),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -257,15 +266,15 @@ fun TripSettlementScreen(
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("RETRY SAVE TO LOCAL HISTORY", fontWeight = FontWeight.Black, fontSize = 12.sp)
+                            Text("RETRY SAVE TO TRIP HISTORY", fontWeight = FontWeight.Black, fontSize = 12.sp)
                         }
                     }
                 }
             } else if (active.persistedTripId != null) {
                 Surface(
-                    color = Color(0xFF0E291A),
+                    color = colors.greenSuccess.copy(alpha = if (colors.isDark) 0.14f else 0.10f),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, SettleGreen.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, colors.greenSuccess.copy(alpha = 0.5f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("trip_saved_badge")
@@ -274,14 +283,40 @@ fun TripSettlementScreen(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SettleGreen, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = colors.greenSuccess, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "SAVED TO LOCAL TRIP HISTORY (OFFLINE)",
-                            color = SettleGreen,
+                            text = "SAVED TO TRIP HISTORY • LOCAL & SYNC READY",
+                            color = colors.greenSuccess,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = 0.6.sp
+                        )
+                    }
+                }
+            }
+
+            if (isDirectMeter) {
+                Surface(
+                    color = colors.yellowContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, colors.yellowHighlight),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("direct_meter_invoice_only_badge")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Speed, contentDescription = null, tint = colors.yellowText, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "DIRECT METER • CUSTOMER INVOICE ONLY (NO VENDOR CC)",
+                            color = colors.yellowText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.5.sp
                         )
                     }
                 }
@@ -291,9 +326,9 @@ fun TripSettlementScreen(
             // SECTION 1: CUSTOMER INVOICE (NO CC, NO COMMISSION, NO DRIVER BALANCE)
             // =================================================================
             Card(
-                colors = CardDefaults.cardColors(containerColor = SettleBlack),
+                colors = CardDefaults.cardColors(containerColor = colors.meterDisplayBg),
                 shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.5.dp, SettleYellow),
+                border = BorderStroke(1.5.dp, colors.primaryAccent),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("settlement_total_card")
@@ -306,7 +341,7 @@ fun TripSettlementScreen(
                 ) {
                     Text(
                         text = "AMOUNT TO COLLECT FROM CUSTOMER",
-                        color = SettleMuted,
+                        color = colors.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 1.4.sp,
@@ -316,7 +351,7 @@ fun TripSettlementScreen(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = SangamTariffCalculator.formatRupees(breakdown.customerBillTotal),
-                        color = SettleYellow,
+                        color = if (colors.isDark) colors.yellowHighlight else colors.primaryAccent,
                         fontSize = 46.sp,
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.testTag("settlement_total_amount")
@@ -326,29 +361,29 @@ fun TripSettlementScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        StatusTag(text = categoryLabel, bg = SettleCard, fg = SettleWhite)
-                        StatusTag(text = breakdown.tripType.displayName, bg = SettleCard, fg = SettleYellow)
+                        StatusTag(text = categoryLabel, bg = colors.surfaceElevated, fg = colors.textPrimary)
+                        StatusTag(text = tripModeBadgeLabel, bg = colors.yellowContainer, fg = colors.yellowText)
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = "Bill ${trip.tripNumber} • $dateDisplay",
-                        color = SettleMuted,
+                        color = colors.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center
                     )
                     Text(
                         text = "${String.format(Locale.US, "%.2f", breakdown.distanceKm)} km • ${trip.durationSeconds / 60} min",
-                        color = SettleWhite,
+                        color = colors.textPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            if (breakdown.hasUnresolvedAmbiguity || breakdown.warnings.isNotEmpty()) {
+            if (!isDirectMeter && (breakdown.hasUnresolvedAmbiguity || breakdown.warnings.isNotEmpty())) {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2B2110)),
+                    colors = CardDefaults.cardColors(containerColor = if (colors.isDark) Color(0xFF2B2110) else Color(0xFFFFFBEB)),
                     shape = RoundedCornerShape(18.dp),
                     border = BorderStroke(1.dp, SettleAmber),
                     modifier = Modifier
@@ -363,7 +398,7 @@ fun TripSettlementScreen(
                             Icon(Icons.Default.Warning, contentDescription = null, tint = SettleAmber, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "CONFIRMATION REQUIRED (TARIFF RULE)",
+                                text = "TARIFF NOTICE",
                                 color = SettleAmber,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Black,
@@ -373,30 +408,30 @@ fun TripSettlementScreen(
                         breakdown.ambiguities.forEach { amb ->
                             Text(
                                 text = "• ${amb.title}: ${amb.description}",
-                                color = SettleWhite,
+                                color = colors.textPrimary,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
                             )
                             if (amb.candidateOptions.isNotEmpty()) {
                                 Text(
                                     text = "  Options: ${amb.candidateOptions.joinToString(" OR ")}",
-                                    color = SettleYellow,
+                                    color = colors.yellowText,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
                         }
                         breakdown.warnings.forEach { w ->
-                            Text(text = "• $w", color = SettleWhite, fontSize = 11.sp, lineHeight = 16.sp)
+                            Text(text = "• $w", color = colors.textPrimary, fontSize = 11.sp, lineHeight = 16.sp)
                         }
                     }
                 }
             }
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = SettleCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SettleBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("settlement_line_items_card")
@@ -407,12 +442,12 @@ fun TripSettlementScreen(
                 ) {
                     Text(
                         text = "CUSTOMER FARE BREAKDOWN",
-                        color = SettleYellow,
+                        color = colors.yellowText,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 1.sp
                     )
-                    HorizontalDivider(color = SettleBorder)
+                    HorizontalDivider(color = colors.border)
                     breakdown.lineItems.forEach { item ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -422,35 +457,35 @@ fun TripSettlementScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = item.label,
-                                    color = SettleWhite,
+                                    color = colors.textPrimary,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = item.detail,
-                                    color = SettleMuted,
+                                    color = colors.textSecondary,
                                     fontSize = 11.sp
                                 )
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = SangamTariffCalculator.formatRupees(item.amount),
-                                color = if (item.isPassThrough) SettleMuted else SettleWhite,
+                                color = if (item.isPassThrough) colors.textSecondary else colors.textPrimary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Black
                             )
                         }
                     }
-                    HorizontalDivider(color = SettleBorder)
+                    HorizontalDivider(color = colors.border)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Final Payable", color = SettleYellow, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                        Text("Final Payable", color = colors.primaryAccent, fontSize = 14.sp, fontWeight = FontWeight.Black)
                         Text(
                             text = SangamTariffCalculator.formatRupees(breakdown.customerBillTotal),
-                            color = SettleYellow,
+                            color = colors.primaryAccent,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Black
                         )
@@ -460,9 +495,9 @@ fun TripSettlementScreen(
 
             // CUSTOMER UPI QR CODE PAYMENT CARD
             Card(
-                colors = CardDefaults.cardColors(containerColor = SettleCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SettleBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("customer_upi_qr_card")
@@ -476,7 +511,7 @@ fun TripSettlementScreen(
                 ) {
                     Text(
                         text = "SCAN TO PAY CUSTOMER FARE (UPI QR)",
-                        color = SettleYellow,
+                        color = colors.yellowText,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 1.sp
@@ -486,7 +521,7 @@ fun TripSettlementScreen(
                         Surface(
                             color = Color.White,
                             shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(2.dp, SettleYellow)
+                            border = BorderStroke(2.dp, colors.yellowHighlight)
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
@@ -502,13 +537,13 @@ fun TripSettlementScreen(
                             )
                         }
                         if (upiId.isNotBlank()) {
-                            Text(text = "UPI ID: $upiId", color = SettleMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "UPI ID: $upiId", color = colors.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     } else if (generatedUpiBitmap != null) {
                         Surface(
                             color = Color.White,
                             shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(2.dp, SettleYellow)
+                            border = BorderStroke(2.dp, colors.yellowHighlight)
                         ) {
                             Image(
                                 bitmap = generatedUpiBitmap.asImageBitmap(),
@@ -520,14 +555,14 @@ fun TripSettlementScreen(
                         }
                         Text(
                             text = "UPI ID: $upiId • ${SangamTariffCalculator.formatRupees(breakdown.customerBillTotal)}",
-                            color = SettleWhite,
+                            color = colors.textPrimary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     } else {
                         Text(
                             text = "Add your UPI ID or upload a static Payment QR image in Driver Profile to display a customer scan-and-pay QR code here.",
-                            color = SettleMuted,
+                            color = colors.textSecondary,
                             fontSize = 12.sp,
                             textAlign = TextAlign.Center,
                             lineHeight = 17.sp
@@ -538,9 +573,9 @@ fun TripSettlementScreen(
 
             // CUSTOMER INFO & SHARE / BILL PDF (CUSTOMER-ONLY RECEIPT)
             Card(
-                colors = CardDefaults.cardColors(containerColor = SettleCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SettleBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -554,7 +589,7 @@ fun TripSettlementScreen(
                     ) {
                         Text(
                             text = "CUSTOMER BILL & RECEIPT",
-                            color = SettleYellow,
+                            color = colors.yellowText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = 1.sp
@@ -562,7 +597,7 @@ fun TripSettlementScreen(
                         TextButton(onClick = { showCustomerEditor = !showCustomerEditor }) {
                             Text(
                                 text = if (showCustomerEditor) "Hide Details" else "Add Customer Info",
-                                color = SettleYellow,
+                                color = colors.primaryAccent,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -613,15 +648,15 @@ fun TripSettlementScreen(
                                 ShareUtils.sharePdf(context, file, "GET TAXI Customer Bill ${trip.tripNumber}")
                             },
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, SettleYellow),
+                            border = BorderStroke(1.dp, colors.primaryAccent),
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp)
                                 .testTag("share_bill_pdf_button")
                         ) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = SettleYellow, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = colors.primaryAccent, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("CUSTOMER BILL PDF", color = SettleYellow, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                            Text("CUSTOMER BILL PDF", color = colors.primaryAccent, fontWeight = FontWeight.Black, fontSize = 11.sp)
                         }
 
                         OutlinedButton(
@@ -630,431 +665,434 @@ fun TripSettlementScreen(
                                 ShareUtils.shareText(context, text, "GET TAXI Customer Invoice")
                             },
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, SettleBorder),
+                            border = BorderStroke(1.dp, colors.border),
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp)
                                 .testTag("share_bill_text_button")
                         ) {
-                            Icon(Icons.Default.Share, contentDescription = null, tint = SettleWhite, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Share, contentDescription = null, tint = colors.textPrimary, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("SHARE BILL", color = SettleWhite, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                            Text("SHARE BILL", color = colors.textPrimary, fontWeight = FontWeight.Black, fontSize = 11.sp)
                         }
                     }
                 }
             }
 
             // =================================================================
-            // SECTION 2: DRIVER CC SETTLEMENT (STRICTLY DRIVER-ONLY)
+            // SECTION 2 & 3: OTP METER ONLY — DRIVER CC SETTLEMENT & VENDOR REPORT
+            // Strictly hidden for Direct Meter trips!
             // =================================================================
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SettleCard),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SettleBorder),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("settlement_commission_card")
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+            if (!isDirectMeter) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.surface),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, colors.border),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settlement_commission_card")
                 ) {
-                    Text(
-                        text = "DRIVER CC SETTLEMENT (DRIVER ONLY)",
-                        color = SettleYellow,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "DRIVER CC SETTLEMENT (DRIVER ONLY)",
+                            color = colors.yellowText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
 
-                    when (val comm = breakdown.commissionResult) {
-                        is SangamTariffCalculator.CommissionResult.Confirmed -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Approved CC Amount", color = SettleWhite, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    Text(comm.ruleLabel, color = SettleMuted, fontSize = 11.sp)
+                        when (val comm = breakdown.commissionResult) {
+                            is SangamTariffCalculator.CommissionResult.Confirmed -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Approved CC Amount", color = colors.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text(comm.ruleLabel, color = colors.textSecondary, fontSize = 11.sp)
+                                    }
+                                    Text(
+                                        text = SangamTariffCalculator.formatRupees(comm.amount),
+                                        color = colors.primaryAccent,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.testTag("confirmed_commission_amount")
+                                    )
                                 }
+                            }
+
+                            is SangamTariffCalculator.CommissionResult.NeedsConfirmation -> {
+                                StatusTag(text = "NEEDS CONFIRMATION", bg = colors.yellowContainer, fg = SettleAmber)
+                                Text(text = comm.reason, color = colors.textPrimary, fontSize = 12.sp, lineHeight = 16.sp)
+                                if (comm.minPossibleAmount != null && comm.maxPossibleAmount != null) {
+                                    Text(
+                                        text = "Rate Range: ${SangamTariffCalculator.formatRupees(comm.minPossibleAmount)} – ${SangamTariffCalculator.formatRupees(comm.maxPossibleAmount)}",
+                                        color = colors.yellowText,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+                                comm.candidateLabels.forEach { opt ->
+                                    Text(text = "• $opt", color = colors.textSecondary, fontSize = 11.sp)
+                                }
+                            }
+
+                            is SangamTariffCalculator.CommissionResult.NotSpecified -> {
+                                val tagLabel = if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) {
+                                    "VARIABLE / MANUAL CC"
+                                } else {
+                                    "NOT SPECIFIED IN CHART"
+                                }
+                                StatusTag(text = tagLabel, bg = colors.yellowContainer, fg = SettleAmber)
+                                Text(text = comm.reason, color = colors.textPrimary, fontSize = 12.sp, lineHeight = 16.sp)
+                            }
+                        }
+
+                        if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) {
+                            var manualCcInput by remember(trip.tripNumber, trip.ccAmount, trip.ccStatus) {
+                                mutableStateOf(
+                                    if (breakdown.commissionResult is SangamTariffCalculator.CommissionResult.Confirmed) {
+                                        String.format(Locale.US, "%.2f", breakdown.commissionResult.amount.toDouble())
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(colors.surfaceElevated, RoundedCornerShape(14.dp))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 Text(
-                                    text = SangamTariffCalculator.formatRupees(comm.amount),
-                                    color = SettleYellow,
-                                    fontSize = 16.sp,
+                                    text = "DAY RENTAL CC (VARIABLE / MANUAL)",
+                                    color = colors.yellowText,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Black,
-                                    modifier = Modifier.testTag("confirmed_commission_amount")
+                                    letterSpacing = 0.8.sp
                                 )
-                            }
-                        }
-
-                        is SangamTariffCalculator.CommissionResult.NeedsConfirmation -> {
-                            StatusTag(text = "NEEDS CONFIRMATION", bg = Color(0xFF451A03), fg = SettleAmber)
-                            Text(text = comm.reason, color = SettleWhite, fontSize = 12.sp, lineHeight = 16.sp)
-                            if (comm.minPossibleAmount != null && comm.maxPossibleAmount != null) {
                                 Text(
-                                    text = "Rate Range: ${SangamTariffCalculator.formatRupees(comm.minPossibleAmount)} – ${SangamTariffCalculator.formatRupees(comm.maxPossibleAmount)}",
-                                    color = SettleYellow,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Black
+                                    text = "No fixed percentage applies to Day Rental. Enter the applicable CC amount for this trip (Driver Settlement only; Customer Bill stays unchanged).",
+                                    color = colors.textSecondary,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
                                 )
-                            }
-                            comm.candidateLabels.forEach { opt ->
-                                Text(text = "• $opt", color = SettleMuted, fontSize = 11.sp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedTextField(
+                                        value = manualCcInput,
+                                        onValueChange = { manualCcInput = it },
+                                        label = { Text("CC Amount (₹)") },
+                                        placeholder = { Text("e.g. 250") },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        colors = settleFieldColors(),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("day_rental_manual_cc_input")
+                                    )
+                                    Button(
+                                        onClick = {
+                                            val parsed = manualCcInput.trim().toDoubleOrNull()
+                                            if (parsed != null && parsed >= 0.0) {
+                                                viewModel.updateManualDayRentalCc(trip.id, parsed)
+                                                Toast.makeText(
+                                                    context,
+                                                    "Manual Day Rental CC saved (Customer Bill unchanged)",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Enter a valid CC amount (₹0 or more)",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = colors.primaryAccent,
+                                            contentColor = colors.onPrimaryAccent
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier
+                                            .height(52.dp)
+                                            .testTag("save_day_rental_cc_button")
+                                    ) {
+                                        Text("SAVE CC", fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                    }
+                                }
                             }
                         }
 
-                        is SangamTariffCalculator.CommissionResult.NotSpecified -> {
-                            val tagLabel = if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) {
-                                "VARIABLE / MANUAL CC"
-                            } else {
-                                "NOT SPECIFIED IN CHART"
+                        HorizontalDivider(color = colors.border)
+
+                        when (val bal = breakdown.driverBalanceStatus) {
+                            is SangamTariffCalculator.DriverBalanceStatus.Confirmed -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Driver Balance (After CC)", color = colors.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = SangamTariffCalculator.formatRupees(bal.amount),
+                                        color = colors.greenSuccess,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.testTag("confirmed_driver_balance")
+                                    )
+                                }
                             }
-                            StatusTag(text = tagLabel, bg = Color(0xFF451A03), fg = SettleAmber)
-                            Text(text = comm.reason, color = SettleWhite, fontSize = 12.sp, lineHeight = 16.sp)
+
+                            is SangamTariffCalculator.DriverBalanceStatus.RangePendingConfirmation -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Driver Balance (After CC)", color = colors.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        val rangeStr = if (bal.minDriverBalance != null && bal.maxDriverBalance != null) {
+                                            "Est. ${SangamTariffCalculator.formatRupees(bal.minDriverBalance)} – ${SangamTariffCalculator.formatRupees(bal.maxDriverBalance)}"
+                                        } else {
+                                            "Pending CC confirmation"
+                                        }
+                                        Text(rangeStr, color = SettleAmber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    StatusTag(text = "PENDING", bg = colors.surfaceElevated, fg = SettleAmber)
+                                }
+                            }
                         }
                     }
+                }
 
-                    if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) {
-                        var manualCcInput by remember(trip.tripNumber, trip.ccAmount, trip.ccStatus) {
-                            mutableStateOf(
-                                if (breakdown.commissionResult is SangamTariffCalculator.CommissionResult.Confirmed) {
-                                    String.format(Locale.US, "%.2f", breakdown.commissionResult.amount.toDouble())
-                                } else {
-                                    ""
-                                }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.meterDisplayBg),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, colors.primaryAccent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("get_taxi_gpay_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            VendorLogoBadge(
+                                vendorId = SangamTariffConfig.VENDOR_ID,
+                                vendorName = SangamTariffConfig.VENDOR_NAME,
+                                height = 34.dp
+                            )
+                            StatusTag(
+                                text = if (ccTransferConfirmed) "MANUAL CONFIRMATION NOTED" else "MANUAL GPAY TRANSFER",
+                                bg = colors.surfaceElevated,
+                                fg = if (ccTransferConfirmed) colors.greenSuccess else SettleAmber
                             )
                         }
-                        Column(
+
+                        Text(
+                            text = "Transfer Driver CC via GPay",
+                            color = colors.textPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black
+                        )
+
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(SettleBlack, RoundedCornerShape(14.dp))
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                .background(colors.surfaceElevated, RoundedCornerShape(14.dp))
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "DAY RENTAL CC (VARIABLE / MANUAL)",
-                                color = SettleYellow,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 0.8.sp
-                            )
-                            Text(
-                                text = "No fixed percentage applies to Day Rental. Enter the applicable CC amount for this trip (Driver Settlement only; Customer Bill stays unchanged).",
-                                color = SettleMuted,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                OutlinedTextField(
-                                    value = manualCcInput,
-                                    onValueChange = { manualCcInput = it },
-                                    label = { Text("CC Amount (₹)") },
-                                    placeholder = { Text("e.g. 250") },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                    colors = settleFieldColors(),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("day_rental_manual_cc_input")
-                                )
-                                Button(
-                                    onClick = {
-                                        val parsed = manualCcInput.trim().toDoubleOrNull()
-                                        if (parsed != null && parsed >= 0.0) {
-                                            viewModel.updateManualDayRentalCc(trip.id, parsed)
-                                            Toast.makeText(
-                                                context,
-                                                "Manual Day Rental CC saved (Customer Bill unchanged)",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Enter a valid CC amount (₹0 or more)",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = SettleYellow,
-                                        contentColor = SettleBlack
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .height(52.dp)
-                                        .testTag("save_day_rental_cc_button")
-                                ) {
-                                    Text("SAVE CC", fontWeight = FontWeight.Black, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    HorizontalDivider(color = SettleBorder)
-
-                    when (val bal = breakdown.driverBalanceStatus) {
-                        is SangamTariffCalculator.DriverBalanceStatus.Confirmed -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Driver Balance (After CC)", color = SettleWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Column {
+                                Text("GET TAXI GPAY NUMBER", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text(
-                                    text = SangamTariffCalculator.formatRupees(bal.amount),
-                                    color = SettleGreen,
-                                    fontSize = 18.sp,
+                                    text = SangamTariffConfig.VENDOR_GPAY_NUMBER,
+                                    color = if (colors.isDark) colors.yellowHighlight else colors.primaryAccent,
+                                    fontSize = 20.sp,
                                     fontWeight = FontWeight.Black,
-                                    modifier = Modifier.testTag("confirmed_driver_balance")
+                                    letterSpacing = 1.sp,
+                                    modifier = Modifier.testTag("gpay_number_text")
                                 )
                             }
-                        }
-
-                        is SangamTariffCalculator.DriverBalanceStatus.RangePendingConfirmation -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Button(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("GET TAXI GPay", SangamTariffConfig.VENDOR_GPAY_NUMBER))
+                                    Toast.makeText(context, "Copied ${SangamTariffConfig.VENDOR_GPAY_NUMBER}", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("copy_gpay_button")
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Driver Balance (After CC)", color = SettleWhite, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    val rangeStr = if (bal.minDriverBalance != null && bal.maxDriverBalance != null) {
-                                        "Est. ${SangamTariffCalculator.formatRupees(bal.minDriverBalance)} – ${SangamTariffCalculator.formatRupees(bal.maxDriverBalance)}"
-                                    } else {
-                                        "Pending CC confirmation"
-                                    }
-                                    Text(rangeStr, color = SettleAmber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                                StatusTag(text = "PENDING", bg = SettleBlack, fg = SettleAmber)
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("COPY", fontWeight = FontWeight.Black, fontSize = 12.sp)
                             }
                         }
-                    }
-                }
-            }
 
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SettleBlack),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SettleYellow),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("get_taxi_gpay_card")
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        VendorLogoBadge(
-                            vendorId = SangamTariffConfig.VENDOR_ID,
-                            vendorName = SangamTariffConfig.VENDOR_NAME,
-                            height = 34.dp
-                        )
-                        StatusTag(
-                            text = if (ccTransferConfirmed) "MANUAL CONFIRMATION NOTED" else "MANUAL GPAY TRANSFER",
-                            bg = SettleCard,
-                            fg = if (ccTransferConfirmed) SettleGreen else SettleAmber
-                        )
-                    }
-
-                    Text(
-                        text = "Transfer Driver CC via GPay",
-                        color = SettleWhite,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Black
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(SettleCard, RoundedCornerShape(14.dp))
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("GET TAXI GPAY NUMBER", color = SettleMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = SangamTariffConfig.VENDOR_GPAY_NUMBER,
-                                color = SettleYellow,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 1.sp,
-                                modifier = Modifier.testTag("gpay_number_text")
-                            )
-                        }
                         Button(
                             onClick = {
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 clipboard.setPrimaryClip(ClipData.newPlainText("GET TAXI GPay", SangamTariffConfig.VENDOR_GPAY_NUMBER))
-                                Toast.makeText(context, "Copied ${SangamTariffConfig.VENDOR_GPAY_NUMBER}", Toast.LENGTH_SHORT).show()
+                                ccTransferConfirmed = true
+                                viewModel.markCurrentSettlementCcConfirmed()
+                                Toast.makeText(
+                                    context,
+                                    "GPay ${SangamTariffConfig.VENDOR_GPAY_NUMBER} copied. CC confirmation recorded.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = SettleYellow, contentColor = SettleBlack),
-                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                            shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("copy_gpay_button")
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("pay_cc_button")
                         ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("COPY", fontWeight = FontWeight.Black, fontSize = 12.sp)
+                            Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Pay CC", fontWeight = FontWeight.Black, fontSize = 14.sp)
                         }
-                    }
 
-                    Button(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("GET TAXI GPay", SangamTariffConfig.VENDOR_GPAY_NUMBER))
-                            ccTransferConfirmed = true
-                            viewModel.markCurrentSettlementCcConfirmed()
-                            Toast.makeText(
-                                context,
-                                "GPay ${SangamTariffConfig.VENDOR_GPAY_NUMBER} copied. CC confirmation recorded.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = SettleYellow, contentColor = SettleBlack),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("pay_cc_button")
-                    ) {
-                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Pay CC", fontWeight = FontWeight.Black, fontSize = 14.sp)
+                        val commInstruction = when (val comm = breakdown.commissionResult) {
+                            is SangamTariffCalculator.CommissionResult.Confirmed ->
+                                "Send ${SangamTariffCalculator.formatRupees(comm.amount)} to ${SangamTariffConfig.VENDOR_GPAY_NUMBER} via GPay and confirm manually. Separate from customer billing."
+                            else ->
+                                "Verify approved CC amount before transferring to GPay ${SangamTariffConfig.VENDOR_GPAY_NUMBER} and confirm manually."
+                        }
+                        Text(text = commInstruction, color = colors.textSecondary, fontSize = 11.sp, lineHeight = 16.sp)
                     }
-
-                    val commInstruction = when (val comm = breakdown.commissionResult) {
-                        is SangamTariffCalculator.CommissionResult.Confirmed ->
-                            "Send ${SangamTariffCalculator.formatRupees(comm.amount)} to ${SangamTariffConfig.VENDOR_GPAY_NUMBER} via GPay and confirm manually. Separate from customer billing and Baseware."
-                        else ->
-                            "Verify approved CC amount before transferring to GPay ${SangamTariffConfig.VENDOR_GPAY_NUMBER} and confirm manually."
-                    }
-                    Text(text = commInstruction, color = SettleMuted, fontSize = 11.sp, lineHeight = 16.sp)
                 }
-            }
 
-            // =================================================================
-            // SECTION 3: INTERNAL CC REPORT (READ-ONLY & SHAREABLE)
-            // =================================================================
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SettleCard),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SettleBorder),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("internal_cc_report_card")
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                // =================================================================
+                // SECTION 3: INTERNAL CC REPORT (READ-ONLY & SHAREABLE)
+                // =================================================================
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.surface),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, colors.border),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("internal_cc_report_card")
                 ) {
-                    Text(
-                        text = "VENDOR / DRIVER SHARE REPORT (READ-ONLY)",
-                        color = SettleYellow,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
-                    HorizontalDivider(color = SettleBorder)
-                    val driverIdLine = buildString {
-                        if (cleanDriverId.isNotBlank()) append("ID: $cleanDriverId")
-                        if (resolvedDriverMobile.isNotBlank()) {
-                            if (isNotEmpty()) append(" • ")
-                            append("Mob: $resolvedDriverMobile")
-                        }
-                    }.ifBlank { "Registered Driver" }
-                    val vehicleSummary = if (resolvedVehicleReg.isNotBlank()) "$categoryLabel • $resolvedVehicleReg" else categoryLabel
-
-                    ReportRow("Driver Name", resolvedDriverName)
-                    ReportRow("Driver ID / Mobile", driverIdLine)
-                    ReportRow("Vehicle", vehicleSummary)
-                    ReportRow("Trip Type", breakdown.tripType.displayName)
-                    ReportRow("Bill / Report ID", trip.tripNumber)
-                    ReportRow("Date & Time", dateDisplay)
-                    ReportRow("Distance & Duration", "${String.format(Locale.US, "%.2f", breakdown.distanceKm)} km • ${trip.durationSeconds / 60} min")
-                    ReportRow("Customer Bill Amount", SangamTariffCalculator.formatRupees(breakdown.customerBillTotal))
-
-                    when (val comm = breakdown.commissionResult) {
-                        is SangamTariffCalculator.CommissionResult.Confirmed -> {
-                            ReportRow("Approved CC Rule", comm.ruleLabel)
-                            ReportRow("Approved CC Amount", SangamTariffCalculator.formatRupees(comm.amount))
-                        }
-                        is SangamTariffCalculator.CommissionResult.NeedsConfirmation -> {
-                            ReportRow("Approved CC Rule", comm.reason)
-                            ReportRow("Approved CC Amount", "Needs Confirmation")
-                        }
-                        is SangamTariffCalculator.CommissionResult.NotSpecified -> {
-                            ReportRow("Approved CC Rule", comm.reason)
-                            ReportRow("Approved CC Amount", "Not Specified")
-                        }
-                    }
-
-                    val balLabel = when (val bal = breakdown.driverBalanceStatus) {
-                        is SangamTariffCalculator.DriverBalanceStatus.Confirmed -> SangamTariffCalculator.formatRupees(bal.amount)
-                        is SangamTariffCalculator.DriverBalanceStatus.RangePendingConfirmation -> "Pending Confirmation"
-                    }
-                    ReportRow("Driver Net Balance", balLabel)
-                    ReportRow("GET TAXI GPay", SangamTariffConfig.VENDOR_GPAY_NUMBER)
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = {
-                                val enrichedTrip = trip.copy(
-                                    driverName = resolvedDriverName,
-                                    driverMobile = resolvedDriverMobile,
-                                    vehicleNumber = resolvedVehicleReg
-                                )
-                                val file = PdfGenerator.generateInternalCcReportPdf(context, enrichedTrip, breakdown, cleanDriverId)
-                                ShareUtils.sharePdf(context, file, "GET TAXI Vendor Share Report ${trip.tripNumber}")
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, SettleYellow),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("share_internal_cc_pdf_button")
-                        ) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = SettleYellow, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("VENDOR PDF", color = SettleYellow, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                        Text(
+                            text = "VENDOR / DRIVER SHARE REPORT (READ-ONLY)",
+                            color = colors.yellowText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        HorizontalDivider(color = colors.border)
+                        val driverIdLine = buildString {
+                            if (cleanDriverId.isNotBlank()) append("ID: $cleanDriverId")
+                            if (resolvedDriverMobile.isNotBlank()) {
+                                if (isNotEmpty()) append(" • ")
+                                append("Mob: $resolvedDriverMobile")
+                            }
+                        }.ifBlank { "Registered Driver" }
+                        val vehicleSummary = if (resolvedVehicleReg.isNotBlank()) "$categoryLabel • $resolvedVehicleReg" else categoryLabel
+
+                        ReportRow("Driver Name", resolvedDriverName)
+                        ReportRow("Driver ID / Mobile", driverIdLine)
+                        ReportRow("Vehicle", vehicleSummary)
+                        ReportRow("Trip Type", breakdown.tripType.displayName)
+                        ReportRow("Bill / Report ID", trip.tripNumber)
+                        ReportRow("Date & Time", dateDisplay)
+                        ReportRow("Distance & Duration", "${String.format(Locale.US, "%.2f", breakdown.distanceKm)} km • ${trip.durationSeconds / 60} min")
+                        ReportRow("Customer Bill Amount", SangamTariffCalculator.formatRupees(breakdown.customerBillTotal))
+
+                        when (val comm = breakdown.commissionResult) {
+                            is SangamTariffCalculator.CommissionResult.Confirmed -> {
+                                ReportRow("Approved CC Rule", comm.ruleLabel)
+                                ReportRow("Approved CC Amount", SangamTariffCalculator.formatRupees(comm.amount))
+                            }
+                            is SangamTariffCalculator.CommissionResult.NeedsConfirmation -> {
+                                ReportRow("Approved CC Rule", comm.reason)
+                                ReportRow("Approved CC Amount", "Needs Confirmation")
+                            }
+                            is SangamTariffCalculator.CommissionResult.NotSpecified -> {
+                                ReportRow("Approved CC Rule", comm.reason)
+                                ReportRow("Approved CC Amount", "Not Specified")
+                            }
                         }
 
-                        OutlinedButton(
-                            onClick = {
-                                val enrichedTrip = trip.copy(
-                                    driverName = resolvedDriverName,
-                                    driverMobile = resolvedDriverMobile,
-                                    vehicleNumber = resolvedVehicleReg
-                                )
-                                val text = ShareUtils.buildInternalCcReportText(enrichedTrip, breakdown, cleanDriverId)
-                                ShareUtils.shareText(context, text, "GET TAXI Vendor Share Report")
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, SettleBorder),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("share_internal_cc_report_button")
+                        val balLabel = when (val bal = breakdown.driverBalanceStatus) {
+                            is SangamTariffCalculator.DriverBalanceStatus.Confirmed -> SangamTariffCalculator.formatRupees(bal.amount)
+                            is SangamTariffCalculator.DriverBalanceStatus.RangePendingConfirmation -> "Pending Confirmation"
+                        }
+                        ReportRow("Driver Net Balance", balLabel)
+                        ReportRow("GET TAXI GPay", SangamTariffConfig.VENDOR_GPAY_NUMBER)
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(Icons.Default.Share, contentDescription = null, tint = SettleWhite, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("SHARE REPORT", color = SettleWhite, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                            OutlinedButton(
+                                onClick = {
+                                    val enrichedTrip = trip.copy(
+                                        driverName = resolvedDriverName,
+                                        driverMobile = resolvedDriverMobile,
+                                        vehicleNumber = resolvedVehicleReg
+                                    )
+                                    val file = PdfGenerator.generateInternalCcReportPdf(context, enrichedTrip, breakdown, cleanDriverId)
+                                    ShareUtils.sharePdf(context, file, "GET TAXI Vendor Share Report ${trip.tripNumber}")
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, colors.primaryAccent),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("share_internal_cc_pdf_button")
+                            ) {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = colors.primaryAccent, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("VENDOR PDF", color = colors.primaryAccent, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val enrichedTrip = trip.copy(
+                                        driverName = resolvedDriverName,
+                                        driverMobile = resolvedDriverMobile,
+                                        vehicleNumber = resolvedVehicleReg
+                                    )
+                                    val text = ShareUtils.buildInternalCcReportText(enrichedTrip, breakdown, cleanDriverId)
+                                    ShareUtils.shareText(context, text, "GET TAXI Vendor Share Report")
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, colors.border),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("share_internal_cc_report_button")
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = colors.textPrimary, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("SHARE REPORT", color = colors.textPrimary, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -1067,16 +1105,17 @@ fun TripSettlementScreen(
 
 @Composable
 private fun ReportRow(label: String, value: String) {
+    val colors = LocalGetTaxiColors.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        Text(text = label, color = SettleMuted, fontSize = 12.sp, modifier = Modifier.weight(0.9f))
+        Text(text = label, color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.weight(0.9f))
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = value,
-            color = SettleWhite,
+            color = colors.textPrimary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.End,
@@ -1103,12 +1142,15 @@ private fun StatusTag(text: String, bg: Color, fg: Color) {
 }
 
 @Composable
-private fun settleFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = SettleYellow,
-    unfocusedBorderColor = SettleBorder,
-    focusedLabelColor = SettleYellow,
-    unfocusedLabelColor = SettleMuted,
-    focusedTextColor = SettleWhite,
-    unfocusedTextColor = SettleWhite,
-    cursorColor = SettleYellow
-)
+private fun settleFieldColors(): TextFieldColors {
+    val colors = LocalGetTaxiColors.current
+    return OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = colors.primaryAccent,
+        unfocusedBorderColor = colors.border,
+        focusedLabelColor = colors.primaryAccent,
+        unfocusedLabelColor = colors.textSecondary,
+        focusedTextColor = colors.textPrimary,
+        unfocusedTextColor = colors.textPrimary,
+        cursorColor = colors.primaryAccent
+    )
+}

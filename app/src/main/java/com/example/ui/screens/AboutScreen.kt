@@ -40,6 +40,7 @@ import com.example.R
 import com.example.service.FloatingSpeedOverlayManager
 import com.example.service.LocationTrackingService
 import com.example.ui.components.CreatorSignatureBanner
+import com.example.ui.theme.LocalGetTaxiColors
 
 private const val HDS_PREFS_NAME = "hds_company_prefs"
 private const val KEY_HDS_CONTACT_PHONE = "hds_contact_phone"
@@ -55,6 +56,7 @@ fun AboutScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val colors = LocalGetTaxiColors.current
     val prefs = remember { context.getSharedPreferences(HDS_PREFS_NAME, Context.MODE_PRIVATE) }
     var hdsContactNumber by remember {
         mutableStateOf(prefs.getString(KEY_HDS_CONTACT_PHONE, "")?.trim().orEmpty())
@@ -73,7 +75,7 @@ fun AboutScreen(
                 title = {
                     Text(
                         text = "Habeeb Digital Solutions (HDS)",
-                        color = Color(0xFF0F172A),
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Black,
                         fontSize = 17.sp
                     )
@@ -86,14 +88,14 @@ fun AboutScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color(0xFF475569)
+                            tint = colors.primaryAccent
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFFDFBFF))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface)
             )
         },
-        containerColor = Color(0xFFFDFBFF)
+        containerColor = colors.background
     ) { innerPadding ->
         Column(
             modifier = Modifier

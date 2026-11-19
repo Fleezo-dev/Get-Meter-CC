@@ -27,22 +27,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.preferences.SettingsRepository
 import com.example.service.LocationTrackingService
+import com.example.ui.theme.LocalGetTaxiColors
 import com.example.util.AppLanguage
 import com.example.util.SangamTariffConfig
 import com.example.util.VoiceAnnouncementManager
 import com.example.util.appStrings
 import com.example.viewmodel.SettingsViewModel
 import java.util.Locale
-
-private val SetBlack = Color(0xFF090A0C)
-private val SetCharcoal = Color(0xFF14171C)
-private val SetCard = Color(0xFF1E222A)
-private val SetBorder = Color(0xFF2D333E)
-private val SetYellow = Color(0xFFFFC107)
-private val SetWhite = Color(0xFFFFFFFF)
-private val SetMuted = Color(0xFF9CA3AF)
-private val SetAmber = Color(0xFFF59E0B)
 
 private fun formatDoubleInput(value: Double?): String {
     if (value == null) return ""
@@ -55,13 +48,16 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onNavigateBack: () -> Unit,
     onNavigateToDriverProfile: () -> Unit = {},
-    onNavigateToAbout: () -> Unit = {}
+    onNavigateToAbout: () -> Unit = {},
+    onNavigateToDirectMeterSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val strings = appStrings()
+    val colors = LocalGetTaxiColors.current
 
     val appLanguageCode by viewModel.appLanguage.collectAsStateWithLifecycle()
     val voiceLanguageCode by viewModel.voiceAnnouncementLanguage.collectAsStateWithLifecycle()
+    val appearanceMode by viewModel.appearanceMode.collectAsStateWithLifecycle()
     val speedThresholdState by viewModel.speedThreshold.collectAsStateWithLifecycle()
     val audioEnabledState by viewModel.audioEnabled.collectAsStateWithLifecycle()
     val floatingBubbleEnabledState by viewModel.floatingBubbleEnabled.collectAsStateWithLifecycle()
@@ -71,7 +67,7 @@ fun SettingsScreen(
     var speedThresholdInput by remember { mutableStateOf("") }
     var distanceCalibrationFactorInput by remember { mutableStateOf("1.000") }
     var audioEnabled by remember { mutableStateOf(true) }
-    var floatingBubbleEnabled by remember { mutableStateOf(true) }
+    var floatingBubbleEnabled by remember { mutableStateOf(false) }
     var showSavedMessage by remember { mutableStateOf(false) }
 
     LaunchedEffect(
@@ -92,7 +88,7 @@ fun SettingsScreen(
                 title = {
                     Text(
                         text = strings.settingsScreenTitle,
-                        color = SetWhite,
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Black,
                         fontSize = 18.sp
                     )
@@ -105,14 +101,14 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = strings.back,
-                            tint = SetYellow
+                            tint = colors.primaryAccent
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = SetBlack)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface)
             )
         },
-        containerColor = SetCharcoal,
+        containerColor = colors.background,
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
@@ -134,10 +130,10 @@ fun SettingsScreen(
                     )
                     showSavedMessage = true
                 },
-                icon = { Icon(Icons.Default.Save, contentDescription = null, tint = SetBlack) },
-                text = { Text(strings.saveSettingsButton, fontWeight = FontWeight.Black, color = SetBlack) },
-                containerColor = SetYellow,
-                contentColor = SetBlack,
+                icon = { Icon(Icons.Default.Save, contentDescription = null, tint = colors.onPrimaryAccent) },
+                text = { Text(strings.saveSettingsButton, fontWeight = FontWeight.Black, color = colors.onPrimaryAccent) },
+                containerColor = colors.primaryAccent,
+                contentColor = colors.onPrimaryAccent,
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.testTag("save_settings_fab")
             )
@@ -164,7 +160,92 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF34D399))
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text(strings.settingsSavedSuccess, color = SetWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(strings.settingsSavedSuccess, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+
+            // APPEARANCE MODE (Automatic / Day Mode / Night Mode)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, colors.border),
+                modifier = Modifier.fillMaxWidth().testTag("appearance_mode_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier.size(38.dp).background(colors.primaryAccent, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Contrast, contentDescription = null, tint = colors.onPrimaryAccent)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text("Appearance", color = colors.textPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                            Text("Day Mode (White / Red / Yellow) or Night Mode", color = colors.textSecondary, fontSize = 11.sp)
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf(
+                            SettingsRepository.APPEARANCE_AUTO to "Automatic",
+                            SettingsRepository.APPEARANCE_DAY to "Day Mode",
+                            SettingsRepository.APPEARANCE_NIGHT to "Night Mode"
+                        ).forEach { (modeKey, modeLabel) ->
+                            val selected = appearanceMode == modeKey
+                            Button(
+                                onClick = { viewModel.updateAppearanceMode(modeKey) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (selected) colors.primaryAccent else colors.surfaceElevated,
+                                    contentColor = if (selected) colors.onPrimaryAccent else colors.textPrimary
+                                ),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("appearance_option_${modeKey.lowercase(Locale.US)}")
+                            ) {
+                                Text(modeLabel, fontWeight = FontWeight.Black, fontSize = 11.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // DIRECT METER SETTINGS (Dedicated & Independent)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, colors.border),
+                modifier = Modifier.fillMaxWidth().testTag("direct_meter_settings_entry_card")
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier.size(40.dp).background(colors.yellowContainer, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, tint = colors.yellowText)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text("Direct Meter Settings", fontWeight = FontWeight.Black, fontSize = 13.sp, color = colors.textPrimary)
+                            Text("Edit Direct Meter Local, Hourly, Outstation & Waiting tariffs", fontSize = 11.sp, color = colors.textSecondary)
+                        }
+                    }
+                    Button(
+                        onClick = onNavigateToDirectMeterSettings,
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("open_direct_meter_settings_from_settings")
+                    ) {
+                        Text("Configure", fontSize = 12.sp, fontWeight = FontWeight.Black)
                     }
                 }
             }
@@ -172,23 +253,23 @@ fun SettingsScreen(
             // LANGUAGE SELECTOR
             val isTamilSelected = AppLanguage.fromCode(appLanguageCode).isTamil || strings.isTamil
             Card(
-                colors = CardDefaults.cardColors(containerColor = SetCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SetBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier.fillMaxWidth().testTag("language_selector_card")
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
-                            modifier = Modifier.size(38.dp).background(SetYellow, CircleShape),
+                            modifier = Modifier.size(38.dp).background(colors.primaryAccent, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Language, contentDescription = null, tint = SetBlack)
+                            Icon(Icons.Default.Language, contentDescription = null, tint = colors.onPrimaryAccent)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text(strings.languageSectionTitle, color = SetWhite, fontWeight = FontWeight.Black, fontSize = 13.sp)
-                            Text(strings.languageSectionSubtitle, color = SetMuted, fontSize = 11.sp)
+                            Text(strings.languageSectionTitle, color = colors.textPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                            Text(strings.languageSectionSubtitle, color = colors.textSecondary, fontSize = 11.sp)
                         }
                     }
 
@@ -197,8 +278,8 @@ fun SettingsScreen(
                         Button(
                             onClick = { viewModel.updateAppLanguage("en") },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isEnglishActive) SetYellow else SetBlack,
-                                contentColor = if (isEnglishActive) SetBlack else SetWhite
+                                containerColor = if (isEnglishActive) colors.primaryAccent else colors.surfaceElevated,
+                                contentColor = if (isEnglishActive) colors.onPrimaryAccent else colors.textPrimary
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f).height(48.dp).testTag("language_option_en")
@@ -208,8 +289,8 @@ fun SettingsScreen(
                         Button(
                             onClick = { viewModel.updateAppLanguage("ta") },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isTamilSelected) SetYellow else SetBlack,
-                                contentColor = if (isTamilSelected) SetBlack else SetWhite
+                                containerColor = if (isTamilSelected) colors.primaryAccent else colors.surfaceElevated,
+                                contentColor = if (isTamilSelected) colors.onPrimaryAccent else colors.textPrimary
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f).height(48.dp).testTag("language_option_ta")
@@ -223,23 +304,23 @@ fun SettingsScreen(
             // VOICE ANNOUNCEMENT LANGUAGE SELECTOR
             val isVoiceTamil = VoiceAnnouncementManager.normalizeLanguageCode(voiceLanguageCode) == VoiceAnnouncementManager.LANG_TA
             Card(
-                colors = CardDefaults.cardColors(containerColor = SetCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SetBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier.fillMaxWidth().testTag("voice_language_selector_card")
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
-                            modifier = Modifier.size(38.dp).background(SetYellow, CircleShape),
+                            modifier = Modifier.size(38.dp).background(colors.primaryAccent, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.RecordVoiceOver, contentDescription = null, tint = SetBlack)
+                            Icon(Icons.Default.RecordVoiceOver, contentDescription = null, tint = colors.onPrimaryAccent)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text("Voice Announcement Language", color = SetWhite, fontWeight = FontWeight.Black, fontSize = 13.sp)
-                            Text("Trip start & passenger greeting announcement voice", color = SetMuted, fontSize = 11.sp)
+                            Text("Voice Announcement Language", color = colors.textPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                            Text("Trip start & passenger greeting announcement voice", color = colors.textSecondary, fontSize = 11.sp)
                         }
                     }
 
@@ -247,8 +328,8 @@ fun SettingsScreen(
                         Button(
                             onClick = { viewModel.updateVoiceAnnouncementLanguage(VoiceAnnouncementManager.LANG_EN) },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (!isVoiceTamil) SetYellow else SetBlack,
-                                contentColor = if (!isVoiceTamil) SetBlack else SetWhite
+                                containerColor = if (!isVoiceTamil) colors.primaryAccent else colors.surfaceElevated,
+                                contentColor = if (!isVoiceTamil) colors.onPrimaryAccent else colors.textPrimary
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f).height(48.dp).testTag("voice_lang_en")
@@ -258,8 +339,8 @@ fun SettingsScreen(
                         Button(
                             onClick = { viewModel.updateVoiceAnnouncementLanguage(VoiceAnnouncementManager.LANG_TA) },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isVoiceTamil) SetYellow else SetBlack,
-                                contentColor = if (isVoiceTamil) SetBlack else SetWhite
+                                containerColor = if (isVoiceTamil) colors.primaryAccent else colors.surfaceElevated,
+                                contentColor = if (isVoiceTamil) colors.onPrimaryAccent else colors.textPrimary
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f).height(48.dp).testTag("voice_lang_ta")
@@ -272,9 +353,9 @@ fun SettingsScreen(
 
             // DRIVER & VEHICLE PROFILE
             Card(
-                colors = CardDefaults.cardColors(containerColor = SetCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SetBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -284,20 +365,20 @@ fun SettingsScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Box(
-                            modifier = Modifier.size(40.dp).background(SetYellow, CircleShape),
+                            modifier = Modifier.size(40.dp).background(colors.primaryAccent, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.AccountCircle, contentDescription = null, tint = SetBlack)
+                            Icon(Icons.Default.AccountCircle, contentDescription = null, tint = colors.onPrimaryAccent)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text(strings.driverVehicleProfileTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SetWhite)
-                            Text(strings.driverVehicleProfileSubtitle, fontSize = 11.sp, color = SetMuted)
+                            Text(strings.driverVehicleProfileTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = colors.textPrimary)
+                            Text(strings.driverVehicleProfileSubtitle, fontSize = 11.sp, color = colors.textSecondary)
                         }
                     }
                     Button(
                         onClick = onNavigateToDriverProfile,
-                        colors = ButtonDefaults.buttonColors(containerColor = SetYellow, contentColor = SetBlack),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
@@ -308,9 +389,9 @@ fun SettingsScreen(
 
             // ABOUT US
             Card(
-                colors = CardDefaults.cardColors(containerColor = SetCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SetBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -320,37 +401,37 @@ fun SettingsScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Box(
-                            modifier = Modifier.size(40.dp).background(SetBlack, CircleShape),
+                            modifier = Modifier.size(40.dp).background(colors.surfaceElevated, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = SetYellow)
+                            Icon(Icons.Default.Info, contentDescription = null, tint = colors.primaryAccent)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text(strings.aboutUsCardTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SetWhite)
-                            Text(strings.aboutUsCardSubtitle, fontSize = 11.sp, color = SetMuted)
+                            Text(strings.aboutUsCardTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = colors.textPrimary)
+                            Text(strings.aboutUsCardSubtitle, fontSize = 11.sp, color = colors.textSecondary)
                         }
                     }
                     OutlinedButton(
                         onClick = onNavigateToAbout,
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, SetBorder),
+                        border = BorderStroke(1.dp, colors.border),
                         modifier = Modifier.heightIn(min = 48.dp).testTag("about_us_settings_button")
                     ) {
-                        Text(strings.viewAboutButton, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SetWhite)
+                        Text(strings.viewAboutButton, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
                     }
                 }
             }
 
-            // FLOATING SPEEDOMETER BUBBLE
+            // OPTIONAL FLOATING SPEEDOMETER BUBBLE (OFF BY DEFAULT — NOT REQUIRED)
             val hasOverlayPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 Settings.canDrawOverlays(context)
             } else true
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = SetBlack),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SetBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier.fillMaxWidth().testTag("floating_bubble_settings_card")
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -361,15 +442,15 @@ fun SettingsScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             Box(
-                                modifier = Modifier.size(40.dp).background(SetYellow, CircleShape),
+                                modifier = Modifier.size(40.dp).background(colors.surfaceElevated, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Speed, contentDescription = null, tint = SetBlack)
+                                Icon(Icons.Default.Speed, contentDescription = null, tint = colors.primaryAccent)
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text(strings.floatingBubbleCardTitle, fontWeight = FontWeight.Black, fontSize = 13.sp, color = SetWhite)
-                                Text(strings.floatingBubbleCardSubtitle, fontSize = 11.sp, color = SetMuted)
+                                Text("Floating Speed Bubble (Optional)", fontWeight = FontWeight.Black, fontSize = 13.sp, color = colors.textPrimary)
+                                Text("Not required. Meter tracking & persistent notification run without overlay permission.", fontSize = 11.sp, color = colors.textSecondary)
                             }
                         }
                         Switch(
@@ -378,14 +459,15 @@ fun SettingsScreen(
                                 floatingBubbleEnabled = checked
                                 viewModel.updateFloatingBubbleEnabled(checked)
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = SetBlack, checkedTrackColor = SetYellow),
+                            colors = SwitchDefaults.colors(checkedThumbColor = colors.onPrimaryAccent, checkedTrackColor = colors.primaryAccent),
                             modifier = Modifier.testTag("toggle_floating_bubble")
                         )
                     }
 
-                    if (!hasOverlayPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    // Only offer overlay permission shortcut if the driver explicitly opts in
+                    if (floatingBubbleEnabled && !hasOverlayPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         Spacer(modifier = Modifier.height(10.dp))
-                        Button(
+                        OutlinedButton(
                             onClick = {
                                 try {
                                     context.startActivity(
@@ -395,11 +477,11 @@ fun SettingsScreen(
                                     context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = SetYellow, contentColor = SetBlack),
                             shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, colors.primaryAccent),
                             modifier = Modifier.fillMaxWidth().height(48.dp)
                         ) {
-                            Text(strings.grantOverlayPermissionButton, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Text(strings.grantOverlayPermissionButton, fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.primaryAccent)
                         }
                     }
                 }
@@ -407,20 +489,20 @@ fun SettingsScreen(
 
             // GPS CALIBRATION & AUDIO SETTINGS
             Card(
-                colors = CardDefaults.cardColors(containerColor = SetCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, SetBorder),
+                border = BorderStroke(1.dp, colors.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("METER & GPS CALIBRATION", color = SetYellow, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                    Text("METER & GPS CALIBRATION", color = colors.primaryAccent, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
 
                     OutlinedTextField(
                         value = speedThresholdInput,
                         onValueChange = { speedThresholdInput = it },
                         label = { Text(strings.waitSpeedThresholdLabel) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = darkSettingsFieldColors(),
+                        colors = themedSettingsFieldColors(),
                         modifier = Modifier.fillMaxWidth().testTag("input_speed_threshold")
                     )
 
@@ -429,7 +511,7 @@ fun SettingsScreen(
                         onValueChange = { distanceCalibrationFactorInput = it },
                         label = { Text(strings.gpsCalibrationFactorLabel) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = darkSettingsFieldColors(),
+                        colors = themedSettingsFieldColors(),
                         modifier = Modifier.fillMaxWidth().testTag("input_calibration_factor")
                     )
 
@@ -439,13 +521,13 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(strings.soundVoiceTitle, color = SetWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text(strings.soundVoiceSubtitle, color = SetMuted, fontSize = 11.sp)
+                            Text(strings.soundVoiceTitle, color = colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(strings.soundVoiceSubtitle, color = colors.textSecondary, fontSize = 11.sp)
                         }
                         Switch(
                             checked = audioEnabled,
                             onCheckedChange = { audioEnabled = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = SetBlack, checkedTrackColor = SetYellow),
+                            colors = SwitchDefaults.colors(checkedThumbColor = colors.onPrimaryAccent, checkedTrackColor = colors.primaryAccent),
                             modifier = Modifier.testTag("toggle_audio")
                         )
                     }
@@ -458,12 +540,15 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun darkSettingsFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = SetYellow,
-    unfocusedBorderColor = SetBorder,
-    focusedLabelColor = SetYellow,
-    unfocusedLabelColor = SetMuted,
-    focusedTextColor = SetWhite,
-    unfocusedTextColor = SetWhite,
-    cursorColor = SetYellow
-)
+private fun themedSettingsFieldColors(): TextFieldColors {
+    val colors = LocalGetTaxiColors.current
+    return OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = colors.primaryAccent,
+        unfocusedBorderColor = colors.border,
+        focusedLabelColor = colors.primaryAccent,
+        unfocusedLabelColor = colors.textSecondary,
+        focusedTextColor = colors.textPrimary,
+        unfocusedTextColor = colors.textPrimary,
+        cursorColor = colors.primaryAccent
+    )
+}

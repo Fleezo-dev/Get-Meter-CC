@@ -13,6 +13,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.example.ui.screens.AboutScreen
+import com.example.ui.screens.DirectMeterSettingsScreen
 import com.example.ui.screens.DriverProfileScreen
 import com.example.ui.screens.HomeMeterScreen
 import com.example.ui.screens.SettingsScreen
@@ -75,6 +76,9 @@ fun TaxiMeterNavGraph(
                     },
                     onNavigateToHistory = {
                         navController.navigate("trip_history")
+                    },
+                    onNavigateToDirectMeterSettings = {
+                        navController.navigate("direct_meter_settings")
                     }
                 )
             }
@@ -114,7 +118,15 @@ fun TaxiMeterNavGraph(
                     viewModel = settingsViewModel,
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToDriverProfile = { navController.navigate("driver_profile") },
-                    onNavigateToAbout = { navController.navigate("about") }
+                    onNavigateToAbout = { navController.navigate("about") },
+                    onNavigateToDirectMeterSettings = { navController.navigate("direct_meter_settings") }
+                )
+            }
+
+            composable("direct_meter_settings") {
+                DirectMeterSettingsScreen(
+                    viewModel = settingsViewModel,
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
 

@@ -83,7 +83,7 @@ class FloatingSpeedOverlayManager(private val context: Context) {
 
         fun isBubbleEnabled(context: Context): Boolean {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            return prefs.getBoolean(KEY_BUBBLE_ENABLED, true)
+            return prefs.getBoolean(KEY_BUBBLE_ENABLED, false)
         }
 
         fun setBubbleEnabled(context: Context, enabled: Boolean) {
@@ -136,7 +136,7 @@ class FloatingSpeedOverlayManager(private val context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun isOverlayEnabled(): Boolean {
-        return prefs.getBoolean(KEY_BUBBLE_ENABLED, true)
+        return prefs.getBoolean(KEY_BUBBLE_ENABLED, false)
     }
 
     fun setOverlayEnabled(enabled: Boolean) {

@@ -23,10 +23,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.ui.theme.LocalGetTaxiColors
 import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(onNavigateToHome: () -> Unit) {
+    val colors = LocalGetTaxiColors.current
     val scale = remember { Animatable(0f) }
     val alpha = remember { Animatable(0f) }
 
@@ -50,7 +52,7 @@ fun SplashScreen(onNavigateToHome: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF14171C))
+            .background(colors.background)
             .testTag("splash_screen"),
         contentAlignment = Alignment.Center
     ) {
@@ -61,7 +63,7 @@ fun SplashScreen(onNavigateToHome: () -> Unit) {
             Surface(
                 color = Color(0xFFFFFFFF),
                 shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(2.dp, Color(0xFFFFC107)),
+                border = BorderStroke(2.dp, colors.primaryAccent),
                 modifier = Modifier
                     .scale(scale.value)
                     .padding(16.dp)
@@ -80,8 +82,8 @@ fun SplashScreen(onNavigateToHome: () -> Unit) {
             Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                text = "GET TAXI • PROFESSIONAL METER",
-                color = Color(0xFFFFC107),
+                text = "GET TAXI – SMART TAXI METER",
+                color = colors.primaryAccent,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 1.6.sp

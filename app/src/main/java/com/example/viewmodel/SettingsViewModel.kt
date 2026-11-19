@@ -32,6 +32,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val floatingBubbleEnabled: StateFlow<Boolean> = settingsRepository.floatingBubbleEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsRepository.DEFAULT_FLOATING_BUBBLE_ENABLED)
 
+    val appearanceMode: StateFlow<String> = settingsRepository.appearanceMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.DEFAULT_APPEARANCE_MODE)
+
+    val directMeterTariffSnapshot: StateFlow<com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot> =
+        settingsRepository.directMeterTariffSnapshot
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot()
+            )
+
     val currency: StateFlow<String> = settingsRepository.currency
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsRepository.DEFAULT_CURRENCY)
 
@@ -206,6 +217,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun updateDistanceCalibrationFactor(value: Double?) {
         viewModelScope.launch {
             settingsRepository.updateDistanceCalibrationFactor(value)
+        }
+    }
+
+    fun updateAppearanceMode(mode: String) {
+        viewModelScope.launch {
+            settingsRepository.updateAppearanceMode(mode)
+        }
+    }
+
+    fun saveDirectMeterSettings(snapshot: com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot) {
+        viewModelScope.launch {
+            settingsRepository.saveDirectMeterSettings(snapshot)
+        }
+    }
+
+    fun resetDirectMeterDefaults() {
+        viewModelScope.launch {
+            settingsRepository.resetDirectMeterDefaults()
         }
     }
 

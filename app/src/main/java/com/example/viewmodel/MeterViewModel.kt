@@ -70,8 +70,22 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
     private val _packageHours = MutableStateFlow(1)
     val packageHours: StateFlow<Int> = _packageHours.asStateFlow()
 
+    private val _use100KmPackage = MutableStateFlow(false)
+    val use100KmPackage: StateFlow<Boolean> = _use100KmPackage.asStateFlow()
+
     private val _over12Hours = MutableStateFlow(false)
     val over12Hours: StateFlow<Boolean> = _over12Hours.asStateFlow()
+
+    // Direct Meter Mode selection (completely independent of OTP Meter)
+    private val _selectedMeterMode = MutableStateFlow(SangamTariffConfig.METER_MODE_OTP)
+    val selectedMeterMode: StateFlow<String> = _selectedMeterMode.asStateFlow()
+
+    private val _selectedDirectCategory = MutableStateFlow(SangamTariffConfig.DirectMeterCategory.LOCAL)
+    val selectedDirectCategory: StateFlow<SangamTariffConfig.DirectMeterCategory> = _selectedDirectCategory.asStateFlow()
+
+    // Live network & GPS connectivity status
+    private val connectivityMonitor = com.example.util.ConnectivityMonitor(application)
+    val connectivityStatus: StateFlow<com.example.util.ConnectivityStatus> = connectivityMonitor.status
 
     // Exclusive GET TAXI vendor (no multi-vendor switching in v1)
     private val _selectedVendor = MutableStateFlow(VendorLogoRenderer.defaultGetTaxiProfile())
@@ -86,7 +100,7 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
         manual ?: serviceTrip
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    private val _activeTripDisplayMode = MutableStateFlow(ActiveTripDisplayMode.MAP_FIRST)
+    private val _activeTripDisplayMode = MutableStateFlow(ActiveTripDisplayMode.METER_DETAILS)
     val activeTripDisplayMode: StateFlow<ActiveTripDisplayMode> = _activeTripDisplayMode.asStateFlow()
 
     private val _hasActiveSessionBackup = MutableStateFlow(false)
@@ -123,6 +137,39 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
 
         checkForActiveBackup()
         loadDriverProfile()
+        connectivityMonitor.start()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        connectivityMonitor.stop()
+    }
+
+    fun selectMeterMode(mode: String) {
+        val status = tripState.value.status
+        if (status == TripStatus.RUNNING || status == TripStatus.PAUSED) return
+        _selectedMeterMode.value = if (mode == SangamTariffConfig.METER_MODE_DIRECT) {
+            SangamTariffConfig.METER_MODE_DIRECT
+        } else {
+            SangamTariffConfig.METER_MODE_OTP
+        }
+    }
+
+    fun selectDirectCategory(category: SangamTariffConfig.DirectMeterCategory) {
+        val status = tripState.value.status
+        if (status == TripStatus.RUNNING || status == TripStatus.PAUSED) return
+        _selectedDirectCategory.value = category
+    }
+
+    fun setUse100KmPackage(enabled: Boolean) {
+        val category = _selectedVehicleCategory.value
+        val hasPackage = SangamTariffConfig.hourlyTariffFor(category).package100KmFare != null
+        val effective = enabled && hasPackage
+        _use100KmPackage.value = effective
+        val status = tripState.value.status
+        if (status == TripStatus.RUNNING || status == TripStatus.PAUSED) {
+            LocationTrackingService.updateActiveModifiers(use100KmPackage = effective)
+        }
     }
 
     fun selectVehicleCategory(category: VehicleCategory) {
@@ -135,6 +182,13 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (category != VehicleCategory.INNOVA) {
             _isInnovaCrysta.value = false
+        }
+        val hourlyTariff = SangamTariffConfig.hourlyTariffFor(category)
+        if (_packageHours.value < hourlyTariff.minHours) {
+            _packageHours.value = hourlyTariff.minHours
+        }
+        if (hourlyTariff.package100KmFare == null) {
+            _use100KmPackage.value = false
         }
         clearValidationMessage()
     }
@@ -239,8 +293,11 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
     fun checkForActiveBackup() {
         viewModelScope.launch {
             val backup = tripRepository.getActiveTrip()
-            _hasActiveSessionBackup.value = backup != null
+            val liveStatus = tripState.value.status
+            _hasActiveSessionBackup.value = backup != null && liveStatus == TripStatus.IDLE
             if (backup != null) {
+                _selectedMeterMode.value = backup.meterMode.ifBlank { SangamTariffConfig.METER_MODE_OTP }
+                _selectedDirectCategory.value = SangamTariffConfig.DirectMeterCategory.fromId(backup.directCategoryId)
                 _selectedServiceType.value = ServiceType.fromId(backup.serviceType)
                 _selectedVehicleCategory.value = VehicleCategory.fromId(backup.vehicleCategoryId)
                 _selectedSangamTripType.value = SangamTripType.fromId(backup.sangamTripTypeId)
@@ -249,13 +306,19 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
                 _isNightTrip.value = backup.isNightTrip
                 _over12Hours.value = backup.over12Hours
                 _packageHours.value = backup.packageHours.coerceIn(1, 12)
+                _use100KmPackage.value = backup.use100KmPackage
+                // Seamless active-trip recovery if process restarted while a trip was running/paused
+                if (liveStatus == TripStatus.IDLE && backup.startTime > 0L) {
+                    Log.d("MeterViewModel", "Auto-recovering interrupted active trip ${backup.tripNumber} (${backup.distanceKm} km)")
+                    recoverTrip()
+                }
             }
             Log.d("MeterViewModel", "Checked active session backup: ${backup != null}")
         }
     }
 
     fun startTrip() {
-        _activeTripDisplayMode.value = ActiveTripDisplayMode.MAP_FIRST
+        _activeTripDisplayMode.value = ActiveTripDisplayMode.METER_DETAILS
         _manualSettlement.value = null
 
         viewModelScope.launch {
@@ -264,7 +327,15 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             val isCrysta = _isInnovaCrysta.value && category == VehicleCategory.INNOVA
             val outside = _isOutsideCity.value
             val night = _isNightTrip.value
-            val pkgHrs = _packageHours.value.coerceIn(1, 12)
+            val hourlyTariff = SangamTariffConfig.hourlyTariffFor(category)
+            val use100Km = _use100KmPackage.value &&
+                tripType == SangamTripType.HOURLY_RENTAL &&
+                hourlyTariff.package100KmFare != null
+            val pkgHrs = if (tripType == SangamTripType.HOURLY_RENTAL) {
+                if (use100Km) hourlyTariff.package100KmDutyHours else _packageHours.value.coerceIn(hourlyTariff.minHours, 12)
+            } else {
+                _packageHours.value.coerceIn(1, 12)
+            }
             val over12 = _over12Hours.value
 
             val currencyVal = settingsRepository.currency.first()
@@ -273,19 +344,24 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
 
             val localRate = SangamTariffConfig.localNormalRates[category]
             val outRate = SangamTariffConfig.outstationRates[category]
-            val hourlyPkg = SangamTariffConfig.hourlyPackageTableFor(category)?.get(pkgHrs)
             val dayRate = if (isCrysta) SangamTariffConfig.innovaCrystaDayRentalRate else SangamTariffConfig.dayRentalRates[category]
 
             val baseVal = when (tripType) {
                 SangamTripType.LOCAL_NORMAL, SangamTripType.LOCAL_MINIMUM_BILL -> localRate?.initialCharge?.toDouble() ?: 80.0
-                SangamTripType.HOURLY_RENTAL -> hourlyPkg?.toDouble() ?: 350.0
+                SangamTripType.HOURLY_RENTAL -> {
+                    if (use100Km && hourlyTariff.package100KmFare != null) {
+                        hourlyTariff.package100KmFare.toDouble()
+                    } else {
+                        hourlyTariff.hourlyMeterRate.multiply(java.math.BigDecimal(pkgHrs)).toDouble()
+                    }
+                }
                 SangamTripType.OUTSTATION_ONE_WAY -> outRate?.oneWayInitialCharge?.toDouble() ?: 300.0
                 SangamTripType.OUTSTATION_ROUND_TRIP -> outRate?.roundTripInitialCharge?.toDouble() ?: 500.0
                 SangamTripType.DAY_RENTAL -> dayRate?.baseAmount?.toDouble() ?: 2000.0
             }
             val perKmVal = when (tripType) {
                 SangamTripType.LOCAL_NORMAL, SangamTripType.LOCAL_MINIMUM_BILL -> localRate?.perKmRate?.toDouble() ?: 28.0
-                SangamTripType.HOURLY_RENTAL -> SangamTariffConfig.hourlyExtraKmRate.toDouble()
+                SangamTripType.HOURLY_RENTAL -> hourlyTariff.extraKmRate.toDouble()
                 SangamTripType.OUTSTATION_ONE_WAY -> outRate?.oneWayPerKm?.toDouble() ?: 30.0
                 SangamTripType.OUTSTATION_ROUND_TRIP -> outRate?.roundTripPerKm?.toDouble() ?: 15.0
                 SangamTripType.DAY_RENTAL -> dayRate?.perKmRate?.toDouble() ?: 10.0
@@ -322,10 +398,12 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
                 isOutOfCity = outside,
                 isNightTrip = night,
                 packageHours = pkgHrs,
+                use100KmPackage = use100Km,
                 over12Hours = over12,
-                rentalHourlyRate = hourlyPkg?.toDouble() ?: 350.0,
+                meterMode = SangamTariffConfig.METER_MODE_OTP,
+                rentalHourlyRate = hourlyTariff.hourlyMeterRate.toDouble(),
                 rentalIncludedKmPerHour = SangamTariffConfig.hourlyIncludedKmPerHour.toDouble(),
-                rentalMinHours = pkgHrs.toDouble(),
+                rentalMinHours = hourlyTariff.minHours.toDouble(),
                 rentalExtraHrRate = 0.0,
                 rentalExtraKmRate = perKmVal,
                 outstationRatePerKm = perKmVal,
@@ -344,6 +422,83 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             )
             _hasActiveSessionBackup.value = false
         }
+    }
+
+    /**
+     * Starts an independent Direct Meter trip (NO OTP, NO vehicle selection, NO vendor CC/commission).
+     * Locks an immutable snapshot of the user's Direct Meter Settings at trip start.
+     */
+    fun startDirectMeterTrip(directCategory: SangamTariffConfig.DirectMeterCategory = _selectedDirectCategory.value) {
+        _selectedMeterMode.value = SangamTariffConfig.METER_MODE_DIRECT
+        _selectedDirectCategory.value = directCategory
+        _activeTripDisplayMode.value = ActiveTripDisplayMode.METER_DETAILS
+        _manualSettlement.value = null
+
+        viewModelScope.launch {
+            val currencyVal = settingsRepository.currency.first()
+            val thresholdVal = settingsRepository.speedThreshold.first()
+            val calFactor = settingsRepository.distanceCalibrationFactor.first()
+            val directSnapshot = settingsRepository.directMeterTariffSnapshot.first()
+            val snapshotJson = directSnapshot.toJson()
+
+            val (mappedServiceType, baseVal, perKmVal, waitRateVal) = when (directCategory) {
+                SangamTariffConfig.DirectMeterCategory.LOCAL -> listOf(
+                    ServiceType.LOCAL.id,
+                    directSnapshot.localBaseFare,
+                    directSnapshot.localPerKmRate,
+                    directSnapshot.waitingChargePerMin
+                )
+                SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL -> listOf(
+                    ServiceType.RENTAL.id,
+                    directSnapshot.hourlyBaseFare,
+                    directSnapshot.hourlyExtraKmRate,
+                    0.0
+                )
+                SangamTariffConfig.DirectMeterCategory.OUTSTATION -> listOf(
+                    ServiceType.OUTSTATION.id,
+                    directSnapshot.outstationBaseFare,
+                    directSnapshot.outstationPerKmRate,
+                    directSnapshot.waitingChargePerMin
+                )
+            }
+
+            LocationTrackingService.startTrip(
+                context = getApplication(),
+                baseFare = baseVal as Double,
+                farePerKm = perKmVal as Double,
+                waitFarePerMin = waitRateVal as Double,
+                currency = currencyVal,
+                speedThreshold = thresholdVal,
+                serviceType = mappedServiceType as String,
+                vehicleCategoryId = VehicleCategory.MINI.id,
+                sangamTripTypeId = when (directCategory) {
+                    SangamTariffConfig.DirectMeterCategory.LOCAL -> SangamTripType.LOCAL_NORMAL.id
+                    SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL -> SangamTripType.HOURLY_RENTAL.id
+                    SangamTariffConfig.DirectMeterCategory.OUTSTATION -> SangamTripType.OUTSTATION_ONE_WAY.id
+                },
+                meterMode = SangamTariffConfig.METER_MODE_DIRECT,
+                directCategoryId = directCategory.id,
+                directTariffSnapshotJson = snapshotJson,
+                rentalHourlyRate = directSnapshot.hourlyBaseFare,
+                rentalIncludedKmPerHour = directSnapshot.hourlyIncludedKm,
+                rentalMinHours = 1.0,
+                rentalExtraKmRate = directSnapshot.hourlyExtraKmRate,
+                outstationRatePerKm = directSnapshot.outstationPerKmRate,
+                calibrationFactor = calFactor,
+                vendorId = SangamTariffConfig.VENDOR_ID,
+                vendorName = SangamTariffConfig.VENDOR_NAME,
+                vendorContactNumber = ""
+            )
+            _hasActiveSessionBackup.value = false
+        }
+    }
+
+    fun applyVerifiedGapAdjustment(additionalKm: Double) {
+        LocationTrackingService.applyVerifiedGapAdjustment(getApplication(), additionalKm)
+    }
+
+    fun dismissGapWarning() {
+        LocationTrackingService.dismissGapWarning(getApplication())
     }
 
     fun pauseTrip() {
@@ -373,7 +528,7 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
     fun completeTripForSettlement(onReady: () -> Unit) {
         val currentState = tripState.value
         val fallbackInput = LocationTrackingService.buildSangamInput(currentState)
-        val fallbackBreakdown = SangamTariffCalculator.calculateTripFareAndSettlement(fallbackInput)
+        val fallbackBreakdown = LocationTrackingService.calculateBreakdownForState(currentState)
 
         LocationTrackingService.stopTrip(getApplication())
         _activeTripDisplayMode.value = ActiveTripDisplayMode.MAP_FIRST
@@ -399,7 +554,10 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
                     pickup = currentState.pickupAddress.ifBlank { "GPS Location" },
                     drop = currentState.dropAddress.ifBlank { "GPS Location" },
                     extraItems = currentState.extraChargeItems,
-                    existingTripNumber = currentState.tripNumber
+                    existingTripNumber = currentState.tripNumber,
+                    meterMode = currentState.meterMode,
+                    directCategoryId = currentState.directCategoryId,
+                    directTariffSnapshotJson = currentState.directTariffSnapshotJson
                 )
             }
             onReady()
@@ -407,8 +565,8 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Calculates an instant offline Sangam fare & settlement for parked or manual billing
-     * without saving permanent trip history.
+     * Calculates an instant fare & settlement for parked or manual billing.
+     * Note: Outside City Limits and Night Allowance are manual-amount-only (never auto-charged).
      */
     fun calculateQuickSettlement(
         input: SangamTariffCalculator.TripCalculationInput,
@@ -420,11 +578,11 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val breakdown = SangamTariffCalculator.calculateTripFareAndSettlement(input)
             val extras = mutableListOf<ExtraChargeItem>()
-            if (input.isOutsideCity && (input.tripType == SangamTripType.LOCAL_NORMAL || input.tripType == SangamTripType.LOCAL_MINIMUM_BILL)) {
-                extras.add(ExtraChargeItem(label = "Outside City Limits", amount = SangamTariffConfig.localOutsideCityCharge.toDouble()))
+            if (input.outsideCityCharge > 0.0) {
+                extras.add(ExtraChargeItem(label = SangamTariffConfig.EXTRA_LABEL_OUTSIDE_CITY, amount = input.outsideCityCharge))
             }
-            if (input.isNightTrip && (input.tripType == SangamTripType.LOCAL_NORMAL || input.tripType == SangamTripType.LOCAL_MINIMUM_BILL)) {
-                extras.add(ExtraChargeItem(label = "Night Charge (11 PM–6 AM)", amount = SangamTariffConfig.localNightCharge.toDouble()))
+            if (input.nightAllowanceCharge > 0.0) {
+                extras.add(ExtraChargeItem(label = SangamTariffConfig.EXTRA_LABEL_NIGHT_ALLOWANCE, amount = input.nightAllowanceCharge))
             }
             if (input.tollCharge > 0.0) extras.add(ExtraChargeItem(label = "Toll", amount = input.tollCharge))
             if (input.permitCharge > 0.0) extras.add(ExtraChargeItem(label = "Permit", amount = input.permitCharge))
@@ -464,7 +622,10 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
         pickup: String,
         drop: String,
         extraItems: List<ExtraChargeItem>,
-        existingTripNumber: String = ""
+        existingTripNumber: String = "",
+        meterMode: String = SangamTariffConfig.METER_MODE_OTP,
+        directCategoryId: String = SangamTariffConfig.DirectMeterCategory.LOCAL.id,
+        directTariffSnapshotJson: String = ""
     ) {
         val now = System.currentTimeMillis()
         val profile = tripRepository.getDriverProfile()
@@ -474,13 +635,28 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
         val dateText = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(now))
         val timeText = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(now))
 
-        val mappedMode = when (input.tripType) {
-            SangamTripType.LOCAL_NORMAL, SangamTripType.LOCAL_MINIMUM_BILL -> ServiceType.LOCAL.id
-            SangamTripType.HOURLY_RENTAL -> ServiceType.RENTAL.id
-            SangamTripType.OUTSTATION_ONE_WAY, SangamTripType.OUTSTATION_ROUND_TRIP, SangamTripType.DAY_RENTAL -> ServiceType.OUTSTATION.id
+        val isDirect = meterMode == SangamTariffConfig.METER_MODE_DIRECT || breakdown.isDirectMeter
+        val mappedMode = if (isDirect) {
+            when (SangamTariffConfig.DirectMeterCategory.fromId(directCategoryId)) {
+                SangamTariffConfig.DirectMeterCategory.LOCAL -> ServiceType.LOCAL.id
+                SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL -> ServiceType.RENTAL.id
+                SangamTariffConfig.DirectMeterCategory.OUTSTATION -> ServiceType.OUTSTATION.id
+            }
+        } else {
+            when (input.tripType) {
+                SangamTripType.LOCAL_NORMAL, SangamTripType.LOCAL_MINIMUM_BILL -> ServiceType.LOCAL.id
+                SangamTripType.HOURLY_RENTAL -> ServiceType.RENTAL.id
+                SangamTripType.OUTSTATION_ONE_WAY, SangamTripType.OUTSTATION_ROUND_TRIP, SangamTripType.DAY_RENTAL -> ServiceType.OUTSTATION.id
+            }
         }
 
-        val vehicleDisplay = if (breakdown.isInnovaCrysta) "INNOVA CRYSTA" else breakdown.vehicleCategory.displayName
+        val vehicleDisplay = if (isDirect) {
+            "Direct Meter • ${SangamTariffConfig.DirectMeterCategory.fromId(directCategoryId).displayName}"
+        } else if (breakdown.isInnovaCrysta) {
+            "INNOVA CRYSTA"
+        } else {
+            breakdown.vehicleCategory.displayName
+        }
         val extrasTotal = ExtraChargeItem.totalAmount(extraItems)
 
         val baseEntity = TripEntity(
@@ -504,7 +680,7 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             pickupAddress = pickup,
             dropAddress = drop,
             isOutOfCity = input.isOutsideCity,
-            outOfCitySurcharge = if (input.isOutsideCity) SangamTariffConfig.localOutsideCityCharge.toDouble() else 0.0,
+            outOfCitySurcharge = 0.0,
             baseFare = breakdown.lineItems.firstOrNull()?.amount?.toDouble() ?: 0.0,
             farePerKm = 0.0,
             waitFarePerMin = if (
@@ -519,7 +695,8 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             serviceType = mappedMode,
             rentalBaseHours = input.packageHours.toDouble(),
             rentalBaseKm = SangamTariffConfig.hourlyIncludedKmPerHour.toDouble(),
-            rentalBaseFare = SangamTariffConfig.hourlyRatePerChargedHour.multiply(java.math.BigDecimal(input.packageHours.coerceAtLeast(1))).toDouble(),
+            rentalBaseFare = SangamTariffConfig.hourlyTariffFor(input.vehicleCategory).hourlyMeterRate
+                .multiply(java.math.BigDecimal(input.packageHours.coerceAtLeast(1))).toDouble(),
             billableHours = input.packageHours.toLong(),
             outstationDriverBata = if (input.over12Hours) SangamTariffConfig.outstationOver12HoursDriverAllowance.toDouble() else 0.0,
             outstationAdditionalCharges = extrasTotal,
@@ -533,7 +710,12 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             vendorContactNumber = "",
             vendorBusinessAddress = "No. 286, Diwan Bahadur Road, R.S. Puram, Coimbatore",
             vendorInvoiceDetails = "",
-            vendorInvoiceNumber = tripNumber
+            vendorInvoiceNumber = tripNumber,
+            meterMode = if (isDirect) SangamTariffConfig.METER_MODE_DIRECT else SangamTariffConfig.METER_MODE_OTP,
+            directCategoryId = directCategoryId,
+            directTariffSnapshotJson = directTariffSnapshotJson,
+            use100KmPackage = input.use100KmPackage,
+            syncStatus = "PENDING_SYNC"
         )
 
         val snapshotEntity = com.example.util.TripSnapshotMapper.attachFinancialSnapshot(
@@ -737,6 +919,7 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
         _isNightTrip.value = false
         _over12Hours.value = false
         _packageHours.value = 1
+        _use100KmPackage.value = false
         _activeTripDisplayMode.value = ActiveTripDisplayMode.MAP_FIRST
         if (!pendingSaveError) {
             viewModelScope.launch {

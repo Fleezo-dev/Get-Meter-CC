@@ -15,7 +15,7 @@ import com.example.util.VendorLogoRenderer
         ActiveTripRecord::class,
         VendorProfileEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class TripDatabase : RoomDatabase() {
@@ -220,6 +220,30 @@ abstract class TripDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Trips table: Direct Meter separation, 100 KM package snapshot, sync readiness
+                try { db.execSQL("ALTER TABLE trips ADD COLUMN meterMode TEXT NOT NULL DEFAULT 'OTP'") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE trips ADD COLUMN directCategoryId TEXT NOT NULL DEFAULT 'LOCAL'") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE trips ADD COLUMN directTariffSnapshotJson TEXT NOT NULL DEFAULT ''") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE trips ADD COLUMN use100KmPackage INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE trips ADD COLUMN syncStatus TEXT NOT NULL DEFAULT 'PENDING_SYNC'") } catch (_: Exception) {}
+
+                // Active trip table: Direct Meter snapshot + lossless GPS anchor & gap audit fields
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN meterMode TEXT NOT NULL DEFAULT 'OTP'") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN directCategoryId TEXT NOT NULL DEFAULT 'LOCAL'") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN directTariffSnapshotJson TEXT NOT NULL DEFAULT ''") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN use100KmPackage INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN lastAcceptedLat REAL NOT NULL DEFAULT 0.0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN lastAcceptedLng REAL NOT NULL DEFAULT 0.0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN lastAcceptedLocationTimeMs INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN isWaitingActive INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN unverifiedGapSeconds INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN unverifiedGapStraightLineKm REAL NOT NULL DEFAULT 0.0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN needsDistanceVerification INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+            }
+        }
+
         fun seedDefaultVendorsSql(db: SupportSQLiteDatabase) {
             try {
                 val now = System.currentTimeMillis()
@@ -269,7 +293,8 @@ abstract class TripDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10,
                         MIGRATION_10_11,
-                        MIGRATION_11_12
+                        MIGRATION_11_12,
+                        MIGRATION_12_13
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {

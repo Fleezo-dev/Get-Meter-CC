@@ -29,15 +29,9 @@ import com.example.util.SangamTariffCalculator
 import com.example.util.SangamTariffConfig
 import com.example.util.SangamTariffConfig.SangamTripType
 import com.example.util.SangamTariffConfig.VehicleCategory
+import com.example.ui.theme.LocalGetTaxiColors
 import java.util.Locale
 
-private val MeterBlack = Color(0xFF090A0C)
-private val MeterCharcoal = Color(0xFF14171C)
-private val MeterCharcoalCard = Color(0xFF1E222A)
-private val MeterBorder = Color(0xFF2D333E)
-private val TaxiYellow = Color(0xFFFFC107)
-private val TextWhite = Color(0xFFFFFFFF)
-private val TextMuted = Color(0xFF9CA3AF)
 private val WarningAmber = Color(0xFFF59E0B)
 
 @Composable
@@ -46,10 +40,11 @@ fun VehicleCategorySelectorCard(
     isTripActive: Boolean,
     onSelectCategory: (VehicleCategory) -> Unit
 ) {
+    val colors = LocalGetTaxiColors.current
     Card(
-        colors = CardDefaults.cardColors(containerColor = MeterCharcoalCard),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MeterBorder),
+        border = BorderStroke(1.dp, colors.border),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
@@ -63,7 +58,7 @@ fun VehicleCategorySelectorCard(
             ) {
                 Text(
                     text = "VEHICLE CATEGORY",
-                    color = TaxiYellow,
+                    color = colors.primaryAccent,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 1.2.sp
@@ -98,9 +93,9 @@ fun VehicleCategorySelectorCard(
                 VehicleCategory.entries.forEach { category ->
                     val selected = category == selectedCategory
                     Surface(
-                        color = if (selected) TaxiYellow else MeterBlack,
+                        color = if (selected) colors.primaryAccent else colors.surfaceElevated,
                         shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, if (selected) TaxiYellow else MeterBorder),
+                        border = BorderStroke(1.dp, if (selected) colors.primaryAccent else colors.border),
                         modifier = Modifier
                             .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(14.dp))
@@ -113,7 +108,7 @@ fun VehicleCategorySelectorCard(
                         ) {
                             Text(
                                 text = category.shortLabel,
-                                color = if (selected) MeterBlack else TextWhite,
+                                color = if (selected) colors.onPrimaryAccent else colors.textPrimary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Black,
                                 maxLines = 1
@@ -127,7 +122,7 @@ fun VehicleCategorySelectorCard(
 
             Text(
                 text = "${selectedCategory.displayName}: ${selectedCategory.exampleModels}",
-                color = TextMuted,
+                color = colors.textSecondary,
                 fontSize = 11.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -145,12 +140,13 @@ fun SangamTripTypeSelectorCard(
     onSelectTripType: (SangamTripType) -> Unit,
     onToggleInnovaCrysta: (Boolean) -> Unit
 ) {
+    val colors = LocalGetTaxiColors.current
     val supportedTypes = selectedCategory.supportedTripTypes()
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = MeterCharcoalCard),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MeterBorder),
+        border = BorderStroke(1.dp, colors.border),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
@@ -164,7 +160,7 @@ fun SangamTripTypeSelectorCard(
             ) {
                 Text(
                     text = "TRIP TARIFF MODE",
-                    color = TaxiYellow,
+                    color = colors.primaryAccent,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 1.2.sp
@@ -182,9 +178,9 @@ fun SangamTripTypeSelectorCard(
                 supportedTypes.forEach { tripType ->
                     val selected = tripType == selectedTripType
                     Surface(
-                        color = if (selected) TaxiYellow else MeterBlack,
+                        color = if (selected) colors.primaryAccent else colors.surfaceElevated,
                         shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, if (selected) TaxiYellow else MeterBorder),
+                        border = BorderStroke(1.dp, if (selected) colors.primaryAccent else colors.border),
                         modifier = Modifier
                             .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(14.dp))
@@ -197,7 +193,7 @@ fun SangamTripTypeSelectorCard(
                         ) {
                             Text(
                                 text = tripType.displayName,
-                                color = if (selected) MeterBlack else TextWhite,
+                                color = if (selected) colors.onPrimaryAccent else colors.textPrimary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Black,
                                 maxLines = 1
@@ -210,9 +206,9 @@ fun SangamTripTypeSelectorCard(
             if (selectedCategory == VehicleCategory.INNOVA && selectedTripType == SangamTripType.DAY_RENTAL) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
-                    color = MeterBlack,
+                    color = colors.surfaceElevated,
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, if (isInnovaCrysta) TaxiYellow else MeterBorder),
+                    border = BorderStroke(1.dp, if (isInnovaCrysta) colors.primaryAccent else colors.border),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -225,13 +221,13 @@ fun SangamTripTypeSelectorCard(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Innova Crysta Day Rental Rate",
-                                color = TextWhite,
+                                color = colors.textPrimary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = "Standard Innova ₹2,500+₹15/km vs Crysta ₹3,000+₹16/km",
-                                color = TextMuted,
+                                color = colors.textSecondary,
                                 fontSize = 10.sp
                             )
                         }
@@ -240,10 +236,10 @@ fun SangamTripTypeSelectorCard(
                             enabled = !isTripActive,
                             onCheckedChange = onToggleInnovaCrysta,
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = MeterBlack,
-                                checkedTrackColor = TaxiYellow,
-                                uncheckedThumbColor = TextMuted,
-                                uncheckedTrackColor = MeterCharcoalCard
+                                checkedThumbColor = colors.onPrimaryAccent,
+                                checkedTrackColor = colors.primaryAccent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.surface
                             ),
                             modifier = Modifier.testTag("toggle_innova_crysta")
                         )
@@ -262,16 +258,22 @@ fun SangamModifiersAndRatePreviewCard(
     isOutsideCity: Boolean,
     isNightTrip: Boolean,
     packageHours: Int,
+    use100KmPackage: Boolean = false,
     over12Hours: Boolean,
     onToggleOutsideCity: (Boolean) -> Unit,
     onToggleNightTrip: (Boolean) -> Unit,
     onSelectPackageHours: (Int) -> Unit,
+    onToggle100KmPackage: (Boolean) -> Unit = {},
     onToggleOver12Hours: (Boolean) -> Unit
 ) {
+    val colors = LocalGetTaxiColors.current
+    val hourlyTariff = SangamTariffConfig.hourlyTariffFor(category)
+    val effectiveHours = packageHours.coerceIn(hourlyTariff.minHours, 12)
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = MeterCharcoalCard),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MeterBorder),
+        border = BorderStroke(1.dp, colors.border),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
@@ -280,7 +282,7 @@ fun SangamModifiersAndRatePreviewCard(
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
                 text = "GET TAXI ACTIVE TARIFF & MODIFIERS",
-                color = TaxiYellow,
+                color = colors.primaryAccent,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 1.1.sp
@@ -288,12 +290,12 @@ fun SangamModifiersAndRatePreviewCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            val rateSummary = remember(category, tripType, isInnovaCrysta, packageHours) {
-                buildRateSummaryText(category, tripType, isInnovaCrysta, packageHours)
+            val rateSummary = remember(category, tripType, isInnovaCrysta, effectiveHours, use100KmPackage) {
+                buildRateSummaryText(category, tripType, isInnovaCrysta, effectiveHours, use100KmPackage)
             }
             Text(
                 text = rateSummary,
-                color = TextWhite,
+                color = colors.textPrimary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 lineHeight = 17.sp
@@ -301,83 +303,83 @@ fun SangamModifiersAndRatePreviewCard(
 
             when (tripType) {
                 SangamTripType.LOCAL_NORMAL, SangamTripType.LOCAL_MINIMUM_BILL -> {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ModifierToggleChip(
-                            label = "Outside City +₹80",
-                            checked = isOutsideCity,
-                            onToggle = { onToggleOutsideCity(!isOutsideCity) },
-                            testTag = "chip_outside_city",
-                            modifier = Modifier.weight(1f)
-                        )
-                        ModifierToggleChip(
-                            label = "Night 11–6 +₹50",
-                            checked = isNightTrip,
-                            onToggle = { onToggleNightTrip(!isNightTrip) },
-                            testTag = "chip_night_charge",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Additional Charges (Outside City Limits, Night Allowance 11 PM–6 AM) are manual entry only via Extra Charges (+). Auto CC applied on settlement.",
+                        color = colors.textSecondary,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
                 }
 
                 SangamTripType.HOURLY_RENTAL -> {
                     Spacer(modifier = Modifier.height(10.dp))
-                    val pkgAmt = SangamTariffConfig.hourlyPackageTableFor(category)?.get(packageHours)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "Package: ${packageHours}h / ${packageHours * 10} km",
-                                color = TextWhite,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Chart Fee: ${pkgAmt?.let { SangamTariffCalculator.formatRupees(it) } ?: "N/A"}",
-                                color = TaxiYellow,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
+                    if (hourlyTariff.package100KmFare != null) {
+                        ModifierToggleChip(
+                            label = "100 KM / 10h Package (${SangamTariffCalculator.formatRupees(hourlyTariff.package100KmFare)} • +₹${hourlyTariff.extraKmRate.toInt()}/km)",
+                            checked = use100KmPackage,
+                            onToggle = { onToggle100KmPackage(!use100KmPackage) },
+                            testTag = "chip_hourly_100km_package",
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    if (!use100KmPackage) {
+                        val pkgAmt = hourlyTariff.hourlyMeterRate.multiply(java.math.BigDecimal(effectiveHours))
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            OutlinedButton(
-                                onClick = { if (packageHours > 1) onSelectPackageHours(packageHours - 1) },
-                                enabled = packageHours > 1,
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, MeterBorder),
-                                contentPadding = PaddingValues(0.dp),
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .testTag("hourly_hours_minus")
-                            ) {
-                                Text("−", color = TextWhite, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                            Column {
+                                Text(
+                                    text = "Package: ${effectiveHours}h / ${effectiveHours * 10} km (Min ${hourlyTariff.minHours}h)",
+                                    color = colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Meter Fee: ${SangamTariffCalculator.formatRupees(pkgAmt)} (₹${hourlyTariff.hourlyMeterRate.toInt()}/hr incl. CC)",
+                                    color = colors.yellowText,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Black
+                                )
                             }
-                            Text(
-                                text = "${packageHours}h",
-                                color = TaxiYellow,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            OutlinedButton(
-                                onClick = { if (packageHours < 12) onSelectPackageHours(packageHours + 1) },
-                                enabled = packageHours < 12,
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, TaxiYellow),
-                                contentPadding = PaddingValues(0.dp),
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .testTag("hourly_hours_plus")
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("+", color = TaxiYellow, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                                OutlinedButton(
+                                    onClick = { if (effectiveHours > hourlyTariff.minHours) onSelectPackageHours(effectiveHours - 1) },
+                                    enabled = effectiveHours > hourlyTariff.minHours,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, colors.border),
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("hourly_hours_minus")
+                                ) {
+                                    Text("−", color = colors.textPrimary, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                                }
+                                Text(
+                                    text = "${effectiveHours}h",
+                                    color = colors.primaryAccent,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                OutlinedButton(
+                                    onClick = { if (effectiveHours < 12) onSelectPackageHours(effectiveHours + 1) },
+                                    enabled = effectiveHours < 12,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, colors.primaryAccent),
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("hourly_hours_plus")
+                                ) {
+                                    Text("+", color = colors.primaryAccent, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                                }
                             }
                         }
                     }
@@ -408,10 +410,11 @@ private fun ModifierToggleChip(
     testTag: String,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGetTaxiColors.current
     Surface(
-        color = if (checked) TaxiYellow else MeterBlack,
+        color = if (checked) colors.primaryAccent else colors.surfaceElevated,
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, if (checked) TaxiYellow else MeterBorder),
+        border = BorderStroke(1.dp, if (checked) colors.primaryAccent else colors.border),
         modifier = modifier
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(12.dp))
@@ -426,13 +429,13 @@ private fun ModifierToggleChip(
             Icon(
                 imageVector = if (checked) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                 contentDescription = null,
-                tint = if (checked) MeterBlack else TextMuted,
+                tint = if (checked) colors.onPrimaryAccent else colors.textSecondary,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = label,
-                color = if (checked) MeterBlack else TextWhite,
+                color = if (checked) colors.onPrimaryAccent else colors.textPrimary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -446,7 +449,8 @@ private fun buildRateSummaryText(
     category: VehicleCategory,
     tripType: SangamTripType,
     isInnovaCrysta: Boolean,
-    packageHours: Int
+    packageHours: Int,
+    use100KmPackage: Boolean = false
 ): String {
     val localWait = SangamTariffConfig.localWaitingRatePerMin.toInt()
     return when (tripType) {
@@ -460,6 +464,8 @@ private fun buildRateSummaryText(
             when (category) {
                 VehicleCategory.MINI, VehicleCategory.SEDAN ->
                     "Min Bill: 1–5 KM ₹200 | 5–6 KM ₹250 | >6 KM ₹80 + ₹28/km • Wait ₹$localWait/min"
+                VehicleCategory.OMNI_EECO ->
+                    "OMNI / Eeco uses Hourly Rental & 100 KM package tariffs"
                 VehicleCategory.SUV ->
                     "Min Bill: 1–7 KM ₹450 | >7 KM ₹200 + ₹35/km • Wait ₹$localWait/min"
                 VehicleCategory.SUV_PLUS ->
@@ -469,9 +475,14 @@ private fun buildRateSummaryText(
             }
         }
         SangamTripType.HOURLY_RENTAL -> {
-            val hrs = packageHours.coerceIn(1, 12)
-            val amt = hrs * SangamTariffConfig.hourlyRatePerChargedHour.toInt()
-            "Hourly ${hrs}h (${hrs * 10} km): ₹$amt • Extra ₹20/km • 5m grace • ₹0 wait • ₹50/hr CC"
+            val ht = SangamTariffConfig.hourlyTariffFor(category)
+            if (use100KmPackage && ht.package100KmFare != null) {
+                "100 KM / 10h Duty Package: ₹${ht.package100KmFare.toInt()} • Extra ₹${ht.extraKmRate.toInt()}/km • 5m grace • ₹0 wait"
+            } else {
+                val hrs = packageHours.coerceIn(ht.minHours, 12)
+                val amt = hrs * ht.hourlyMeterRate.toInt()
+                "Hourly ${hrs}h (${hrs * 10} km, min ${ht.minHours}h): ₹$amt (₹${ht.hourlyMeterRate.toInt()}/hr incl. ₹${ht.commissionPerHour.toInt()} CC) • Extra ₹${ht.extraKmRate.toInt()}/km • 5m grace • ₹0 wait"
+            }
         }
         SangamTripType.OUTSTATION_ONE_WAY -> {
             val r = SangamTariffConfig.outstationRates[category]
@@ -507,6 +518,7 @@ fun QuickFareCalculatorDialog(
     initialOutsideCity: Boolean,
     initialNightTrip: Boolean,
     initialPackageHours: Int,
+    initialUse100KmPackage: Boolean = false,
     initialOver12Hours: Boolean,
     onDismiss: () -> Unit,
     onCalculateAndSettle: (
@@ -516,14 +528,18 @@ fun QuickFareCalculatorDialog(
         durationMin: Long
     ) -> Unit
 ) {
+    val colors = LocalGetTaxiColors.current
+    val hourlyTariff = SangamTariffConfig.hourlyTariffFor(initialCategory)
+
     var distanceInput by remember { mutableStateOf("") }
     var durationInput by remember { mutableStateOf("") }
     var localWaitMinInput by remember { mutableStateOf("") }
     var outstationWaitHoursInput by remember { mutableStateOf("") }
     var outstationWaitRateInput by remember { mutableStateOf("") }
-    var hoursInput by remember { mutableIntStateOf(initialPackageHours.coerceIn(1, 12)) }
-    var outsideCity by remember { mutableStateOf(initialOutsideCity) }
-    var nightTrip by remember { mutableStateOf(initialNightTrip) }
+    var hoursInput by remember { mutableIntStateOf(initialPackageHours.coerceIn(hourlyTariff.minHours, 12)) }
+    var use100Km by remember { mutableStateOf(initialUse100KmPackage && hourlyTariff.package100KmFare != null) }
+    var outsideCityAmountInput by remember { mutableStateOf("") }
+    var nightAllowanceAmountInput by remember { mutableStateOf("") }
     var over12Hrs by remember { mutableStateOf(initialOver12Hours) }
     var tollInput by remember { mutableStateOf("") }
     var permitInput by remember { mutableStateOf("") }
@@ -535,9 +551,9 @@ fun QuickFareCalculatorDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = MeterCharcoal),
+            colors = CardDefaults.cardColors(containerColor = colors.surface),
             shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, TaxiYellow),
+            border = BorderStroke(1.dp, colors.primaryAccent),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 640.dp)
@@ -557,7 +573,7 @@ fun QuickFareCalculatorDialog(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "PARKED FARE CALCULATOR",
-                            color = TaxiYellow,
+                            color = colors.primaryAccent,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Black
                         )
@@ -566,17 +582,17 @@ fun QuickFareCalculatorDialog(
                         } else initialCategory.displayName
                         Text(
                             text = "$catText • ${initialTripType.displayName}",
-                            color = TextMuted,
+                            color = colors.textSecondary,
                             fontSize = 12.sp
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = colors.textSecondary)
                     }
                 }
 
                 if (errorMsg != null) {
-                    Text(text = errorMsg!!, color = Color(0xFFF87171), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(text = errorMsg!!, color = colors.redDanger, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 OutlinedTextField(
@@ -585,38 +601,49 @@ fun QuickFareCalculatorDialog(
                     label = { Text("Distance (KM)") },
                     placeholder = { Text("e.g. 12.5") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    colors = darkFieldColors(),
+                    colors = themedFieldColors(),
                     modifier = Modifier.fillMaxWidth().testTag("quick_calc_distance_input")
                 )
 
                 if (initialTripType == SangamTripType.HOURLY_RENTAL) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Package Hours: ${hoursInput}h (${hoursInput * 10} km • ₹${hoursInput * 350})",
-                            color = TextWhite,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                    if (hourlyTariff.package100KmFare != null) {
+                        ModifierToggleChip(
+                            label = "100 KM / 10h Package (₹${hourlyTariff.package100KmFare.toInt()})",
+                            checked = use100Km,
+                            onToggle = { use100Km = !use100Km },
+                            testTag = "quick_calc_100km_package",
+                            modifier = Modifier.fillMaxWidth()
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = { if (hoursInput > 1) hoursInput-- },
-                                modifier = Modifier.size(48.dp),
-                                contentPadding = PaddingValues(0.dp)
-                            ) { Text("−", color = TextWhite) }
-                            OutlinedButton(
-                                onClick = { if (hoursInput < 12) hoursInput++ },
-                                modifier = Modifier.size(48.dp),
-                                contentPadding = PaddingValues(0.dp)
-                            ) { Text("+", color = TaxiYellow) }
+                    }
+                    if (!use100Km) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Hours: ${hoursInput}h (${hoursInput * 10} km • ₹${hoursInput * hourlyTariff.hourlyMeterRate.toInt()})",
+                                color = colors.textPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { if (hoursInput > hourlyTariff.minHours) hoursInput-- },
+                                    modifier = Modifier.size(48.dp),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) { Text("−", color = colors.textPrimary) }
+                                OutlinedButton(
+                                    onClick = { if (hoursInput < 12) hoursInput++ },
+                                    modifier = Modifier.size(48.dp),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) { Text("+", color = colors.primaryAccent) }
+                            }
                         }
                     }
                     Text(
-                        text = "Extra KM: ₹20/km • 5-min grace • Waiting charge: ₹0",
-                        color = TextMuted,
+                        text = "Extra KM: ₹${hourlyTariff.extraKmRate.toInt()}/km • 5-min grace • Wait: ₹0",
+                        color = colors.textSecondary,
                         fontSize = 11.sp
                     )
                 } else {
@@ -625,7 +652,7 @@ fun QuickFareCalculatorDialog(
                         onValueChange = { durationInput = it },
                         label = { Text("Duration (Minutes, optional)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = darkFieldColors(),
+                        colors = themedFieldColors(),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -637,25 +664,36 @@ fun QuickFareCalculatorDialog(
                         label = { Text("Local Waiting (Minutes, ₹2/min, optional)") },
                         placeholder = { Text("e.g. 10") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = darkFieldColors(),
+                        colors = themedFieldColors(),
                         modifier = Modifier.fillMaxWidth().testTag("quick_calc_local_wait_input")
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        ModifierToggleChip(
-                            label = "Outside City +₹80",
-                            checked = outsideCity,
-                            onToggle = { outsideCity = !outsideCity },
-                            testTag = "quick_calc_outside_city",
-                            modifier = Modifier.weight(1f)
-                        )
-                        ModifierToggleChip(
-                            label = "Night +₹50",
-                            checked = nightTrip,
-                            onToggle = { nightTrip = !nightTrip },
-                            testTag = "quick_calc_night",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                }
+
+                // Manual-amount-only named additional charges (ZERO auto charge!)
+                Text(
+                    text = "Manual Additional Charges (Optional — enter amount only if applicable)",
+                    color = colors.textSecondary,
+                    fontSize = 11.sp
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = outsideCityAmountInput,
+                        onValueChange = { outsideCityAmountInput = it },
+                        label = { Text("Outside City (₹)") },
+                        placeholder = { Text("0") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = themedFieldColors(),
+                        modifier = Modifier.weight(1f).testTag("quick_calc_outside_city")
+                    )
+                    OutlinedTextField(
+                        value = nightAllowanceAmountInput,
+                        onValueChange = { nightAllowanceAmountInput = it },
+                        label = { Text("Night 11PM–6AM (₹)") },
+                        placeholder = { Text("0") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = themedFieldColors(),
+                        modifier = Modifier.weight(1f).testTag("quick_calc_night")
+                    )
                 }
 
                 if (initialTripType == SangamTripType.OUTSTATION_ONE_WAY ||
@@ -670,7 +708,7 @@ fun QuickFareCalculatorDialog(
                     )
                     Text(
                         text = "Manual Outstation Waiting (optional — no auto-waiting)",
-                        color = TextMuted,
+                        color = colors.textSecondary,
                         fontSize = 11.sp
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -680,7 +718,7 @@ fun QuickFareCalculatorDialog(
                             label = { Text("Wait Hours") },
                             placeholder = { Text("e.g. 2") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = darkFieldColors(),
+                            colors = themedFieldColors(),
                             modifier = Modifier.weight(1f).testTag("quick_calc_outstation_wait_hours")
                         )
                         OutlinedTextField(
@@ -689,7 +727,7 @@ fun QuickFareCalculatorDialog(
                             label = { Text("Rate / Hr (₹)") },
                             placeholder = { Text("Manual") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            colors = darkFieldColors(),
+                            colors = themedFieldColors(),
                             modifier = Modifier.weight(1f).testTag("quick_calc_outstation_wait_rate")
                         )
                     }
@@ -701,7 +739,7 @@ fun QuickFareCalculatorDialog(
                         onValueChange = { tollInput = it },
                         label = { Text("Toll (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = darkFieldColors(),
+                        colors = themedFieldColors(),
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
@@ -709,7 +747,7 @@ fun QuickFareCalculatorDialog(
                         onValueChange = { permitInput = it },
                         label = { Text("Permit (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = darkFieldColors(),
+                        colors = themedFieldColors(),
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
@@ -717,7 +755,7 @@ fun QuickFareCalculatorDialog(
                         onValueChange = { parkingInput = it },
                         label = { Text("Park (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = darkFieldColors(),
+                        colors = themedFieldColors(),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -725,9 +763,9 @@ fun QuickFareCalculatorDialog(
                 OutlinedTextField(
                     value = customExtrasInput,
                     onValueChange = { customExtrasInput = it },
-                    label = { Text("Additional Approved Charges (₹, optional)") },
+                    label = { Text("Other Additional Charges (₹, optional)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    colors = darkFieldColors(),
+                    colors = themedFieldColors(),
                     modifier = Modifier.fillMaxWidth().testTag("quick_calc_custom_extras_input")
                 )
 
@@ -736,14 +774,14 @@ fun QuickFareCalculatorDialog(
                         value = pickupInput,
                         onValueChange = { pickupInput = it },
                         label = { Text("From") },
-                        colors = darkFieldColors(),
+                        colors = themedFieldColors(),
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = dropInput,
                         onValueChange = { dropInput = it },
                         label = { Text("To") },
-                        colors = darkFieldColors(),
+                        colors = themedFieldColors(),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -763,6 +801,8 @@ fun QuickFareCalculatorDialog(
                         } else {
                             0.0
                         }
+                        val outCityManual = outsideCityAmountInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+                        val nightManual = nightAllowanceAmountInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
                         val outWaitHrs = outstationWaitHoursInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
                         val outWaitRate = outstationWaitRateInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
                         val customExtraVal = customExtrasInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
@@ -793,10 +833,13 @@ fun QuickFareCalculatorDialog(
                             tripType = initialTripType,
                             distanceKm = dist,
                             packageHours = hoursInput,
+                            use100KmPackage = use100Km,
                             waitingMinutes = localWaitMins,
                             isInnovaCrysta = initialInnovaCrysta && initialCategory == VehicleCategory.INNOVA,
-                            isOutsideCity = outsideCity,
-                            isNightTrip = nightTrip,
+                            isOutsideCity = outCityManual > 0.0,
+                            isNightTrip = nightManual > 0.0,
+                            outsideCityCharge = outCityManual,
+                            nightAllowanceCharge = nightManual,
                             over12Hours = over12Hrs,
                             tollCharge = tollInput.trim().toDoubleOrNull() ?: 0.0,
                             permitCharge = permitInput.trim().toDoubleOrNull() ?: 0.0,
@@ -807,7 +850,7 @@ fun QuickFareCalculatorDialog(
                         val durMin = durationInput.trim().toLongOrNull() ?: 0L
                         onCalculateAndSettle(input, pickupInput.trim(), dropInput.trim(), durMin)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = TaxiYellow, contentColor = MeterBlack),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -823,11 +866,12 @@ fun QuickFareCalculatorDialog(
 
 @Composable
 fun SangamTariffChartDialog(onDismiss: () -> Unit) {
+    val colors = LocalGetTaxiColors.current
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = MeterCharcoal),
+            colors = CardDefaults.cardColors(containerColor = colors.surface),
             shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, TaxiYellow),
+            border = BorderStroke(1.dp, colors.primaryAccent),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 650.dp)
@@ -846,49 +890,54 @@ fun SangamTariffChartDialog(onDismiss: () -> Unit) {
                 ) {
                     Text(
                         text = "GET TAXI TARIFF DETAILS",
-                        color = TaxiYellow,
+                        color = colors.primaryAccent,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Black
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = colors.textSecondary)
                     }
                 }
 
                 ReferenceBlock(
-                    title = "1. Local Normal & Minimum Bill",
+                    title = "1. OTP Local Normal & Minimum Bill",
                     body = "• MINI / SEDAN: ₹80 + ₹28/km | Min: 1–5km ₹200, 5–6km ₹250, >6km ₹80+₹28/km\n" +
                         "• SUV: ₹200 + ₹35/km | Min: 1–7km ₹450, >7km ₹200+₹35/km\n" +
                         "• SUV+: ₹250 + ₹45/km | Min: 1–10km ₹700, >10km ₹250+₹45/km\n" +
                         "• INNOVA: ₹250 + ₹50/km | Min: 1–10km ₹800, >10km ₹250+₹50/km\n" +
-                        "• Waiting Charge: ₹2/min (separate line item; excluded from Vendor CC)\n" +
-                        "• Extras: Outside city ₹80 | Night (11PM–6AM) ₹50"
+                        "• Waiting Charge: ₹2/min\n" +
+                        "• Additional Charges: Outside City Limits & Night Allowance (11 PM–6 AM) — Manual entry only"
                 )
                 ReferenceBlock(
-                    title = "2. Local Commission",
-                    body = "1–5 KM: ₹30 | 6–10 KM: ₹60–₹75 | 10–25 KM: ₹80 | >25 KM: 10% | >₹800 bill: 10% (base tariff excl. waiting)"
+                    title = "2. Automatic Local CC (Zero Gaps)",
+                    body = "• 0 to 5.00 KM: ₹25\n" +
+                        "• >5.00 to 7.50 KM: ₹50\n" +
+                        "• >7.50 to 10.00 KM: ₹70\n" +
+                        "• >10.00 to 20.00 KM: ₹80\n" +
+                        "• >20.00 KM: ₹100\n" +
+                        "• Total Customer Bill > ₹1,000: 10% of ENTIRE Customer Bill (replaces fixed distance CC)"
                 )
                 ReferenceBlock(
-                    title = "3. Hourly Rental (GET TAXI Uniform Tariff)",
-                    body = "• ₹350 per billed hour across MINI, SEDAN, SUV, SUV+, INNOVA\n" +
-                        "• 10 km free per billed hour • Extra Distance: ₹20/km\n" +
-                        "• 5-minute grace period per block • Waiting Charges: ₹0\n" +
-                        "• Driver CC: ₹50 per billed hour (no 10% commission)"
+                    title = "3. OTP Hourly Rental & 100 KM / 10h Packages",
+                    body = "• MINI / SEDAN: ₹350/hr (min 1h, 10 km/hr, ₹20/extra km, ₹50/hr CC)\n" +
+                        "• OMNI / Eeco: ₹450/hr (incl. ₹75 CC) | 100 KM / 10h Package ₹3,500 • Extra ₹13/km\n" +
+                        "• Ertiga / Rumion (SUV/SUV+): ₹525/hr (incl. ₹75 CC, min 3h) | 100 KM / 10h Package ₹3,800 • Extra ₹14/km\n" +
+                        "• Innova: ₹600/hr (incl. ₹100 CC, min 4h) | 100 KM / 10h Package ₹4,000 • Extra ₹15/km\n" +
+                        "• 5-minute grace period • Waiting Charges: ₹0"
                 )
                 ReferenceBlock(
-                    title = "4. Outstation & Day Rental",
-                    body = "• Outstation One-Way: ₹300 base + ₹30/km (>12h +₹400, 10% CC, manual waiting only)\n" +
-                        "• Outstation Round-Trip: ₹500 base + ₹15/km (>12h +₹400, 10% CC, manual waiting only)\n" +
+                    title = "4. Direct Meter Mode (Independent, No OTP, No CC)",
+                    body = "• Local: ₹100 Base • ₹30/km\n" +
+                        "• Hourly Rental: ₹375/hr • 10 KM Included • ₹20/extra km\n" +
+                        "• Outstation: ₹300 Base • ₹30/km\n" +
+                        "• Default Waiting: ₹2/min • Editable independently in Direct Meter Settings"
+                )
+                ReferenceBlock(
+                    title = "5. OTP Outstation & Day Rental",
+                    body = "• Outstation One-Way: ₹300 base + ₹30/km (>12h +₹400, 10% CC, manual wait)\n" +
+                        "• Outstation Round-Trip: ₹500 base + ₹15/km (>12h +₹400, 10% CC, manual wait)\n" +
                         "• Day Rental: MINI/SEDAN ₹2000+10/km | SUV ₹2300+13/km | SUV+ ₹2400+14/km | INNOVA ₹2500+15/km | CRYSTA ₹3000+16/km\n" +
-                        "• Day Rental CC: Variable / Managed manually per trip (no fixed %)"
-                )
-                ReferenceBlock(
-                    title = "5. Rules Requiring Confirmation / Manual Management",
-                    body = "1) Exact 5.0 KM MINI/SEDAN min-bill overlap (₹200 vs ₹250)\n" +
-                        "2) Local commission 6–10 KM range (₹60–₹75) & 5–6 / 10 KM boundaries\n" +
-                        "3) >25 KM (10%) vs >₹800 bill (10%) alternative vs cumulative\n" +
-                        "4) Outstation Additional Waiting (manual entry only) & Day Rental CC (variable/manual per trip)",
-                    accentColor = WarningAmber
+                        "• Day Rental CC: Variable / Managed manually per trip"
                 )
             }
         }
@@ -899,29 +948,33 @@ fun SangamTariffChartDialog(onDismiss: () -> Unit) {
 private fun ReferenceBlock(
     title: String,
     body: String,
-    accentColor: Color = TaxiYellow
+    accentColor: Color? = null
 ) {
+    val colors = LocalGetTaxiColors.current
     Surface(
-        color = MeterBlack,
+        color = colors.surfaceElevated,
         shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, MeterBorder),
+        border = BorderStroke(1.dp, colors.border),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = title, color = accentColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            Text(text = title, color = accentColor ?: colors.primaryAccent, fontSize = 12.sp, fontWeight = FontWeight.Black)
             Spacer(modifier = Modifier.height(4.dp))
-            Text(text = body, color = TextWhite, fontSize = 11.sp, lineHeight = 16.sp)
+            Text(text = body, color = colors.textPrimary, fontSize = 11.sp, lineHeight = 16.sp)
         }
     }
 }
 
 @Composable
-private fun darkFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = TaxiYellow,
-    unfocusedBorderColor = MeterBorder,
-    focusedLabelColor = TaxiYellow,
-    unfocusedLabelColor = TextMuted,
-    focusedTextColor = TextWhite,
-    unfocusedTextColor = TextWhite,
-    cursorColor = TaxiYellow
-)
+private fun themedFieldColors(): TextFieldColors {
+    val colors = LocalGetTaxiColors.current
+    return OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = colors.primaryAccent,
+        unfocusedBorderColor = colors.border,
+        focusedLabelColor = colors.primaryAccent,
+        unfocusedLabelColor = colors.textSecondary,
+        focusedTextColor = colors.textPrimary,
+        unfocusedTextColor = colors.textPrimary,
+        cursorColor = colors.primaryAccent
+    )
+}

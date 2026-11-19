@@ -16,6 +16,12 @@ class TripRepository(private val tripDao: TripDao) {
 
     val allTrips: Flow<List<TripEntity>> = tripDao.getAllTrips()
 
+    fun getTripsByMeterMode(meterMode: String): Flow<List<TripEntity>> = tripDao.getTripsByMeterMode(meterMode)
+
+    suspend fun getPendingSyncTrips(): List<TripEntity> = tripDao.getPendingSyncTrips()
+
+    suspend fun updateTripSyncStatus(tripId: Int, status: String) = tripDao.updateTripSyncStatus(tripId, status)
+
     val driverProfile: Flow<DriverProfileEntity?> = tripDao.getDriverProfileFlow()
 
     val allVendors: Flow<List<VendorProfileEntity>> = tripDao.getAllVendorsFlow()

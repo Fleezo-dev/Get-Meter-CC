@@ -124,7 +124,9 @@ class LocationTrackingService : Service() {
             speedKmH: Float,
             speedThreshold: Double,
             msSinceLastMovingFix: Long,
-            staleSpeedTimeoutMs: Long = 4000L
+            staleSpeedTimeoutMs: Long = 4000L,
+            meterMode: String = SangamTariffConfig.METER_MODE_OTP,
+            directCategoryId: String = SangamTariffConfig.DirectMeterCategory.LOCAL.id
         ): WaitingTickResult {
             val effectiveSpeed = if (speedKmH >= speedThreshold && msSinceLastMovingFix >= staleSpeedTimeoutMs) {
                 0f
@@ -132,16 +134,26 @@ class LocationTrackingService : Service() {
                 speedKmH
             }
             val isMoving = effectiveSpeed >= speedThreshold
-            val tripType = SangamTariffConfig.SangamTripType.fromId(tripTypeId)
-            val nextWait = when (tripType) {
-                SangamTariffConfig.SangamTripType.LOCAL_NORMAL,
-                SangamTariffConfig.SangamTripType.LOCAL_MINIMUM_BILL -> {
-                    if (!isMoving) currentWaitingSeconds + 1L else currentWaitingSeconds
+            val nextWait = if (meterMode == SangamTariffConfig.METER_MODE_DIRECT) {
+                when (SangamTariffConfig.DirectMeterCategory.fromId(directCategoryId)) {
+                    SangamTariffConfig.DirectMeterCategory.LOCAL,
+                    SangamTariffConfig.DirectMeterCategory.OUTSTATION -> {
+                        if (!isMoving) currentWaitingSeconds + 1L else currentWaitingSeconds
+                    }
+                    SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL -> 0L
                 }
-                SangamTariffConfig.SangamTripType.HOURLY_RENTAL -> 0L
-                SangamTariffConfig.SangamTripType.OUTSTATION_ONE_WAY,
-                SangamTariffConfig.SangamTripType.OUTSTATION_ROUND_TRIP,
-                SangamTariffConfig.SangamTripType.DAY_RENTAL -> currentWaitingSeconds
+            } else {
+                val tripType = SangamTariffConfig.SangamTripType.fromId(tripTypeId)
+                when (tripType) {
+                    SangamTariffConfig.SangamTripType.LOCAL_NORMAL,
+                    SangamTariffConfig.SangamTripType.LOCAL_MINIMUM_BILL -> {
+                        if (!isMoving) currentWaitingSeconds + 1L else currentWaitingSeconds
+                    }
+                    SangamTariffConfig.SangamTripType.HOURLY_RENTAL -> 0L
+                    SangamTariffConfig.SangamTripType.OUTSTATION_ONE_WAY,
+                    SangamTariffConfig.SangamTripType.OUTSTATION_ROUND_TRIP,
+                    SangamTariffConfig.SangamTripType.DAY_RENTAL -> currentWaitingSeconds
+                }
             }
             return WaitingTickResult(
                 nextWaitingSeconds = nextWait,
@@ -164,7 +176,11 @@ class LocationTrackingService : Service() {
             isOutOfCity: Boolean = false,
             isNightTrip: Boolean = false,
             packageHours: Int = 1,
+            use100KmPackage: Boolean = false,
             over12Hours: Boolean = false,
+            meterMode: String = SangamTariffConfig.METER_MODE_OTP,
+            directCategoryId: String = SangamTariffConfig.DirectMeterCategory.LOCAL.id,
+            directTariffSnapshotJson: String = "",
             rentalHourlyRate: Double = 350.0,
             rentalIncludedKmPerHour: Double = 10.0,
             rentalMinHours: Double = 1.0,
@@ -201,7 +217,11 @@ class LocationTrackingService : Service() {
                 putExtra("isOutOfCity", isOutOfCity)
                 putExtra("isNightTrip", isNightTrip)
                 putExtra("packageHours", packageHours)
+                putExtra("use100KmPackage", use100KmPackage)
                 putExtra("over12Hours", over12Hours)
+                putExtra("meterMode", meterMode)
+                putExtra("directCategoryId", directCategoryId)
+                putExtra("directTariffSnapshotJson", directTariffSnapshotJson)
                 putExtra("rentalHourlyRate", rentalHourlyRate)
                 putExtra("rentalIncludedKmPerHour", rentalIncludedKmPerHour)
                 putExtra("rentalMinHours", rentalMinHours)
@@ -396,8 +416,10 @@ class LocationTrackingService : Service() {
             val category = SangamTariffConfig.VehicleCategory.fromId(state.vehicleCategoryId)
             val tripType = SangamTariffConfig.SangamTripType.fromId(state.sangamTripTypeId)
             val liveExtraTotal = ExtraChargeItem.totalAmount(state.extraChargeItems)
+            val minHourly = SangamTariffConfig.hourlyTariffFor(category).minHours
             val effectiveHours = if (tripType == SangamTariffConfig.SangamTripType.HOURLY_RENTAL) {
                 maxOf(
+                    minHourly,
                     state.packageHours.coerceAtLeast(1),
                     FareCalculator.calculateBillableHours(state.durationSeconds).toInt()
                 )
@@ -418,6 +440,7 @@ class LocationTrackingService : Service() {
                 tripType = tripType,
                 distanceKm = state.distanceKm,
                 packageHours = effectiveHours,
+                use100KmPackage = state.use100KmPackage,
                 waitingMinutes = waitingMins,
                 isInnovaCrysta = state.isInnovaCrysta,
                 isOutsideCity = state.isOutOfCity,
@@ -432,20 +455,80 @@ class LocationTrackingService : Service() {
             )
         }
 
+        fun calculateBreakdownForState(state: TripState): SangamTariffCalculator.SangamSettlementBreakdown {
+            return if (state.meterMode == SangamTariffConfig.METER_MODE_DIRECT) {
+                val directCat = SangamTariffConfig.DirectMeterCategory.fromId(state.directCategoryId)
+                val snapshot = SangamTariffConfig.DirectMeterTariffSnapshot.fromJson(state.directTariffSnapshotJson)
+                val billableHours = if (directCat == SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL) {
+                    maxOf(
+                        state.packageHours.coerceAtLeast(1),
+                        FareCalculator.calculateBillableHours(state.durationSeconds).toInt()
+                    )
+                } else {
+                    1
+                }
+                val waitMins = if (directCat == SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL) {
+                    0.0
+                } else {
+                    state.waitingSeconds / 60.0
+                }
+                SangamTariffCalculator.calculateDirectMeterFare(
+                    directCategory = directCat,
+                    distanceKm = state.distanceKm,
+                    billedHours = billableHours,
+                    waitingMinutes = waitMins,
+                    tariffSnapshot = snapshot,
+                    extraChargeItems = state.extraChargeItems
+                )
+            } else {
+                SangamTariffCalculator.calculateTripFareAndSettlement(buildSangamInput(state))
+            }
+        }
+
         fun updateActiveModifiers(
             isOutsideCity: Boolean? = null,
             isNightTrip: Boolean? = null,
             over12Hours: Boolean? = null,
-            packageHours: Int? = null
+            packageHours: Int? = null,
+            use100KmPackage: Boolean? = null
         ) {
             val current = _tripState.value
             val updated = current.copy(
                 isOutOfCity = isOutsideCity ?: current.isOutOfCity,
                 isNightTrip = isNightTrip ?: current.isNightTrip,
                 over12Hours = over12Hours ?: current.over12Hours,
-                packageHours = (packageHours ?: current.packageHours).coerceIn(1, 12)
+                packageHours = (packageHours ?: current.packageHours).coerceIn(1, 12),
+                use100KmPackage = use100KmPackage ?: current.use100KmPackage
             )
             _tripState.value = computeUpdatedStateWithFare(updated)
+        }
+
+        fun applyVerifiedGapAdjustment(context: Context, additionalKm: Double) {
+            if (additionalKm <= 0.0 || additionalKm.isNaN() || additionalKm.isInfinite()) return
+            val intent = Intent(context, LocationTrackingService::class.java).apply {
+                action = "APPLY_GAP_ADJUSTMENT"
+                putExtra("additionalKm", additionalKm)
+            }
+            try {
+                context.startService(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to apply verified gap adjustment", e)
+            }
+        }
+
+        fun dismissGapWarning(context: Context) {
+            val current = _tripState.value
+            _tripState.value = current.copy(needsDistanceVerification = false)
+            if (current.status == TripStatus.RUNNING || current.status == TripStatus.PAUSED) {
+                try {
+                    val intent = Intent(context, LocationTrackingService::class.java).apply {
+                        action = "DISMISS_GAP_WARNING"
+                    }
+                    context.startService(intent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to dismiss gap warning", e)
+                }
+            }
         }
 
         fun computeUpdatedStateWithFare(state: TripState): TripState {
@@ -457,17 +540,34 @@ class LocationTrackingService : Service() {
                 )
             }
 
-            val input = buildSangamInput(state)
-            val breakdown = SangamTariffCalculator.calculateTripFareAndSettlement(input)
+            val breakdown = calculateBreakdownForState(state)
             val totalFare = breakdown.customerBillTotal.toDouble()
-            val includedKmTotal = (input.packageHours * SangamTariffConfig.hourlyIncludedKmPerHour).toDouble()
+
+            val (billableHrs, includedKmTotal) = if (state.meterMode == SangamTariffConfig.METER_MODE_DIRECT) {
+                val snapshot = SangamTariffConfig.DirectMeterTariffSnapshot.fromJson(state.directTariffSnapshotJson)
+                val hrs = if (SangamTariffConfig.DirectMeterCategory.fromId(state.directCategoryId) == SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL) {
+                    maxOf(state.packageHours.coerceAtLeast(1), FareCalculator.calculateBillableHours(state.durationSeconds).toInt())
+                } else {
+                    1
+                }
+                hrs.toLong() to (hrs * snapshot.hourlyIncludedKm)
+            } else {
+                val input = buildSangamInput(state)
+                val hourlyTariff = SangamTariffConfig.hourlyTariffFor(input.vehicleCategory)
+                val includedKm = if (input.use100KmPackage && hourlyTariff.supports100KmPackage) {
+                    hourlyTariff.package100KmIncludedKm.toDouble()
+                } else {
+                    (input.packageHours * hourlyTariff.includedKmPerHour).toDouble()
+                }
+                input.packageHours.toLong() to includedKm
+            }
             val extraKm = (state.distanceKm - includedKmTotal).coerceAtLeast(0.0)
 
             return state.copy(
                 currentFare = totalFare,
                 liveExtraChargesTotal = liveExtraTotal,
-                outOfCitySurchargeAmount = if (input.isOutsideCity) SangamTariffConfig.localOutsideCityCharge.toDouble() else 0.0,
-                billableHours = input.packageHours.toLong(),
+                outOfCitySurchargeAmount = 0.0,
+                billableHours = billableHrs,
                 rentalTotalIncludedKm = includedKmTotal,
                 rentalExtraDistanceKm = extraKm,
                 hasUnresolvedBoundaryFlag = breakdown.ambiguities.isNotEmpty()
@@ -614,7 +714,11 @@ class LocationTrackingService : Service() {
                 val isOutside = intent.getBooleanExtra("isOutOfCity", false)
                 val isNight = intent.getBooleanExtra("isNightTrip", false)
                 val pkgHours = intent.getIntExtra("packageHours", 1)
+                val use100Km = intent.getBooleanExtra("use100KmPackage", false)
                 val over12 = intent.getBooleanExtra("over12Hours", false)
+                val mMode = intent.getStringExtra("meterMode") ?: SangamTariffConfig.METER_MODE_OTP
+                val directCatId = intent.getStringExtra("directCategoryId") ?: SangamTariffConfig.DirectMeterCategory.LOCAL.id
+                val directSnapshotJson = intent.getStringExtra("directTariffSnapshotJson") ?: ""
                 val calFactor = intent.getDoubleExtra("calibrationFactor", 1.0)
 
                 val rHourlyRate = intent.getDoubleExtra("rentalHourlyRate", 350.0)
@@ -647,7 +751,11 @@ class LocationTrackingService : Service() {
                     isOutOfCity = isOutside,
                     isNightTrip = isNight,
                     packageHours = pkgHours,
+                    use100KmPackage = use100Km,
                     over12Hours = over12,
+                    meterMode = mMode,
+                    directCategoryId = directCatId,
+                    directTariffSnapshotJson = directSnapshotJson,
                     rentalHourlyRate = rHourlyRate, rentalIncludedKmPerHour = rIncludedKm, rentalMinHours = rMinHours,
                     rentalExtraHrRate = rExtraHr, rentalExtraKmRate = rExtraKm,
                     outstationRatePerKm = oRateKm, outstationMinFare = oMinFare,
@@ -774,6 +882,28 @@ class LocationTrackingService : Service() {
                 updateNotification()
                 saveSnapshotToDatabase()
             }
+            "APPLY_GAP_ADJUSTMENT" -> {
+                val addKm = intent.getDoubleExtra("additionalKm", 0.0)
+                if (addKm > 0.0) {
+                    val newTotalKm = gpsDistanceEngine.applyAuditedManualDistanceAdjustment(addKm)
+                    _tripState.value = _tripState.value.copy(
+                        distanceKm = newTotalKm,
+                        needsDistanceVerification = false,
+                        unverifiedGapSeconds = 0L,
+                        unverifiedGapStraightLineKm = 0.0
+                    )
+                    recalculateFare()
+                    updateNotification()
+                    saveSnapshotToDatabase()
+                    recordDiagnostic("Audited manual gap adjustment applied: +${String.format(Locale.US, "%.2f", addKm)} km (total ${String.format(Locale.US, "%.2f", newTotalKm)} km)")
+                }
+            }
+            "DISMISS_GAP_WARNING" -> {
+                _tripState.value = _tripState.value.copy(
+                    needsDistanceVerification = false
+                )
+                saveSnapshotToDatabase()
+            }
         }
 
         return START_STICKY
@@ -812,7 +942,11 @@ class LocationTrackingService : Service() {
         isOutOfCity: Boolean = false,
         isNightTrip: Boolean = false,
         packageHours: Int = 1,
+        use100KmPackage: Boolean = false,
         over12Hours: Boolean = false,
+        meterMode: String = SangamTariffConfig.METER_MODE_OTP,
+        directCategoryId: String = SangamTariffConfig.DirectMeterCategory.LOCAL.id,
+        directTariffSnapshotJson: String = "",
         rentalHourlyRate: Double = 350.0,
         rentalIncludedKmPerHour: Double = 10.0,
         rentalMinHours: Double = 1.0,
@@ -872,7 +1006,17 @@ class LocationTrackingService : Service() {
             isOutOfCity = isOutOfCity,
             isNightTrip = isNightTrip,
             packageHours = packageHours.coerceIn(1, 12),
+            use100KmPackage = use100KmPackage,
             over12Hours = over12Hours,
+            meterMode = meterMode,
+            directCategoryId = directCategoryId,
+            directTariffSnapshotJson = directTariffSnapshotJson,
+            lastAcceptedLat = startLat,
+            lastAcceptedLng = startLng,
+            lastAcceptedLocationTimeMs = if (startLat != 0.0 || startLng != 0.0) startTimeNow else 0L,
+            unverifiedGapSeconds = 0L,
+            unverifiedGapStraightLineKm = 0.0,
+            needsDistanceVerification = false,
             rentalHourlyRate = rentalHourlyRate,
             rentalIncludedKmPerHour = if (rentalIncludedKmPerHour > 0.0) rentalIncludedKmPerHour else 10.0,
             rentalMinHours = rentalMinHours,
@@ -905,20 +1049,23 @@ class LocationTrackingService : Service() {
         safeStartForeground(NOTIFICATION_ID, buildNotification())
         recalculateFare()
 
-        // Resolve pickup address asynchronously off the main thread
+        // Immediately persist active trip record and resolve pickup address off main thread
         serviceScope.launch(Dispatchers.IO) {
-            val pickupAddr = resolveAddress(startLat, startLng)
-            _tripState.value = _tripState.value.copy(pickupAddress = pickupAddr)
             val tripNum = repository.generateDeterministicTripNumber(startTimeNow)
             _tripState.value = _tripState.value.copy(tripNumber = tripNum)
             saveSnapshotToDatabase()
-            recordDiagnostic("Trip started: $tripNum, Mode: $serviceType")
+            val pickupAddr = resolveAddress(startLat, startLng)
+            _tripState.value = _tripState.value.copy(pickupAddress = pickupAddr)
+            saveSnapshotToDatabase()
+            recordDiagnostic("Trip started: $tripNum, Mode: $meterMode/$serviceType")
         }
 
         startTrackingLocation()
         startTimers()
-        floatingSpeedOverlay.show()
-        floatingSpeedOverlay.updateSpeed(0.0)
+        if (floatingSpeedOverlay.isOverlayEnabled()) {
+            floatingSpeedOverlay.show()
+            floatingSpeedOverlay.updateSpeed(0.0)
+        }
 
         VoiceAnnouncementManager.announceTripStart(
             context = applicationContext,
@@ -966,7 +1113,26 @@ class LocationTrackingService : Service() {
 
                 userExplicitlyStartedTrip = true
                 lastMovingLocationTimestamp = 0L
-                gpsDistanceEngine.reset(record.distanceKm)
+                val recoveredRoute = com.example.util.RouteCoordinatesSerializer.deserialize(record.routePointsJson)
+                val anchorLat = if (record.lastAcceptedLat != 0.0 || record.lastAcceptedLng != 0.0) {
+                    record.lastAcceptedLat
+                } else {
+                    recoveredRoute.lastOrNull()?.first
+                }
+                val anchorLng = if (record.lastAcceptedLat != 0.0 || record.lastAcceptedLng != 0.0) {
+                    record.lastAcceptedLng
+                } else {
+                    recoveredRoute.lastOrNull()?.second
+                }
+                val anchorTimeMs = record.lastAcceptedLocationTimeMs.takeIf { it > 0L }
+
+                // CRITICAL: Restore both exact accumulated distance AND last accepted GPS anchor!
+                gpsDistanceEngine.restoreAnchorAndDistance(
+                    distanceKm = record.distanceKm,
+                    lastLat = anchorLat,
+                    lastLng = anchorLng,
+                    lastTimeMs = anchorTimeMs
+                )
 
                 val recoveredExtras = ExtraChargeItem.deserialize(record.extraChargesJson)
                 val fallbackSangamType = when (ServiceType.fromId(record.serviceType)) {
@@ -977,7 +1143,11 @@ class LocationTrackingService : Service() {
                 val recoveredSangamType = record.sangamTripTypeId.ifBlank { fallbackSangamType }
                 val recoveredCategory = SangamTariffConfig.VehicleCategory.fromId(record.vehicleCategoryId).id
                 val recoveredTripTypeEnum = SangamTariffConfig.SangamTripType.fromId(recoveredSangamType)
-                val recoveredWaitRate = if (
+                val isDirect = record.meterMode == SangamTariffConfig.METER_MODE_DIRECT
+                val recoveredWaitRate = if (isDirect) {
+                    val directCat = SangamTariffConfig.DirectMeterCategory.fromId(record.directCategoryId)
+                    if (directCat == SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL) 0.0 else record.waitFarePerMin
+                } else if (
                     recoveredTripTypeEnum == SangamTariffConfig.SangamTripType.LOCAL_NORMAL ||
                     recoveredTripTypeEnum == SangamTariffConfig.SangamTripType.LOCAL_MINIMUM_BILL
                 ) {
@@ -1005,8 +1175,21 @@ class LocationTrackingService : Service() {
                     isNightTrip = record.isNightTrip,
                     over12Hours = record.over12Hours,
                     packageHours = record.packageHours.coerceIn(1, 12),
+                    use100KmPackage = record.use100KmPackage,
+                    meterMode = if (isDirect) SangamTariffConfig.METER_MODE_DIRECT else SangamTariffConfig.METER_MODE_OTP,
+                    directCategoryId = record.directCategoryId.ifBlank { SangamTariffConfig.DirectMeterCategory.LOCAL.id },
+                    directTariffSnapshotJson = record.directTariffSnapshotJson,
+                    lastAcceptedLat = anchorLat ?: 0.0,
+                    lastAcceptedLng = anchorLng ?: 0.0,
+                    lastAcceptedLocationTimeMs = anchorTimeMs ?: 0L,
+                    unverifiedGapSeconds = record.unverifiedGapSeconds,
+                    unverifiedGapStraightLineKm = record.unverifiedGapStraightLineKm,
+                    needsDistanceVerification = record.needsDistanceVerification,
+                    latitude = anchorLat,
+                    longitude = anchorLng,
                     rentalHourlyRate = record.rentalBaseFare,
                     rentalMinHours = record.rentalBaseHours,
+                    rentalIncludedKmPerHour = if (record.rentalBaseKm > 0.0) record.rentalBaseKm else 10.0,
                     rentalExtraHrRate = record.rentalExtraHrRate,
                     rentalExtraKmRate = record.rentalExtraKmRate,
                     billableHours = record.billableHours,
@@ -1026,7 +1209,7 @@ class LocationTrackingService : Service() {
                     vendorEmail = record.vendorEmail,
                     vendorGstin = record.vendorGstin,
                     vendorInvoiceDetails = "",
-                    routePoints = com.example.util.RouteCoordinatesSerializer.deserialize(record.routePointsJson)
+                    routePoints = recoveredRoute
                 )
 
                 recalculateFare()
@@ -1037,9 +1220,11 @@ class LocationTrackingService : Service() {
                     startTimers()
                 }
                 safeStartForeground(NOTIFICATION_ID, buildNotification())
-                floatingSpeedOverlay.show()
-                floatingSpeedOverlay.updateSpeed(_tripState.value.speedKmH)
-                recordDiagnostic("Ride recovered: $tripNum (${String.format(Locale.US, "%.2f", record.distanceKm)} km preserved)")
+                if (floatingSpeedOverlay.isOverlayEnabled()) {
+                    floatingSpeedOverlay.show()
+                    floatingSpeedOverlay.updateSpeed(_tripState.value.speedKmH)
+                }
+                recordDiagnostic("Ride recovered: $tripNum (${String.format(Locale.US, "%.2f", record.distanceKm)} km & GPS anchor preserved)")
             } else {
                 stopSelf()
             }
@@ -1120,7 +1305,15 @@ class LocationTrackingService : Service() {
                 val serializedRoute = com.example.util.RouteCoordinatesSerializer.serialize(effectiveRoutePoints)
 
                 val calcInput = buildSangamInput(currentState)
-                val breakdown = SangamTariffCalculator.calculateTripFareAndSettlement(calcInput)
+                val breakdown = calculateBreakdownForState(currentState)
+                val isDirect = currentState.meterMode == SangamTariffConfig.METER_MODE_DIRECT
+                val vehicleTypeLabel = if (isDirect) {
+                    "Direct Meter • ${SangamTariffConfig.DirectMeterCategory.fromId(currentState.directCategoryId).displayName}"
+                } else if (breakdown.isInnovaCrysta) {
+                    "INNOVA CRYSTA"
+                } else {
+                    breakdown.vehicleCategory.displayName
+                }
 
                 val baseTripEntity = TripEntity(
                     id = 0,
@@ -1142,11 +1335,11 @@ class LocationTrackingService : Service() {
                     driverMobile = driverProfile?.driverMobile ?: "",
                     vehicleNumber = driverProfile?.vehicleNumber ?: "",
                     vehicleModel = driverProfile?.vehicleModel ?: "",
-                    vehicleType = if (breakdown.isInnovaCrysta) "INNOVA CRYSTA" else breakdown.vehicleCategory.displayName,
+                    vehicleType = vehicleTypeLabel,
                     pickupAddress = pAddress,
                     dropAddress = dAddress,
                     isOutOfCity = currentState.isOutOfCity,
-                    outOfCitySurcharge = if (currentState.isOutOfCity) SangamTariffConfig.localOutsideCityCharge.toDouble() else 0.0,
+                    outOfCitySurcharge = 0.0,
                     baseFare = currentState.baseFare,
                     farePerKm = currentState.farePerKm,
                     waitFarePerMin = currentState.waitFarePerMin,
@@ -1178,7 +1371,12 @@ class LocationTrackingService : Service() {
                     vendorEmail = currentState.vendorEmail,
                     vendorGstin = currentState.vendorGstin,
                     vendorInvoiceDetails = "",
-                    vendorInvoiceNumber = finalTripNum
+                    vendorInvoiceNumber = finalTripNum,
+                    meterMode = currentState.meterMode,
+                    directCategoryId = currentState.directCategoryId,
+                    directTariffSnapshotJson = currentState.directTariffSnapshotJson,
+                    use100KmPackage = currentState.use100KmPackage,
+                    syncStatus = "PENDING_SYNC"
                 )
 
                 val snapshotEntity = com.example.util.TripSnapshotMapper.attachFinancialSnapshot(
@@ -1409,6 +1607,19 @@ class LocationTrackingService : Service() {
             lastMovingLocationTimestamp = System.currentTimeMillis()
         }
 
+        val updatedGapSeconds = if (processResult.gapDetected) {
+            currentState.unverifiedGapSeconds + processResult.gapDurationSeconds
+        } else {
+            currentState.unverifiedGapSeconds
+        }
+        val updatedGapStraightKm = if (processResult.gapDetected) {
+            currentState.unverifiedGapStraightLineKm + processResult.gapStraightLineKm
+        } else {
+            currentState.unverifiedGapStraightLineKm
+        }
+        val needsVerify = currentState.needsDistanceVerification ||
+            (processResult.gapDetected && processResult.gapStraightLineKm >= 0.05)
+
         _tripState.value = currentState.copy(
             distanceKm = processResult.totalDistanceKm,
             speedKmH = processResult.speedKmH,
@@ -1416,13 +1627,26 @@ class LocationTrackingService : Service() {
             isWaitingPaused = processResult.isMoving,
             latitude = location.latitude,
             longitude = location.longitude,
+            lastAcceptedLat = location.latitude,
+            lastAcceptedLng = location.longitude,
+            lastAcceptedLocationTimeMs = location.time.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            unverifiedGapSeconds = updatedGapSeconds,
+            unverifiedGapStraightLineKm = updatedGapStraightKm,
+            needsDistanceVerification = needsVerify,
             bearing = calculatedBearing,
             routePoints = updatedRoutePoints
         )
 
         recalculateFare()
         updateNotification()
-        floatingSpeedOverlay.updateSpeed(processResult.speedKmH)
+        if (floatingSpeedOverlay.isOverlayEnabled()) {
+            floatingSpeedOverlay.updateSpeed(processResult.speedKmH)
+        }
+        // CRITICAL: Continuously persist on every accepted distance increment or GPS gap
+        // so backgrounding / screen lock / process kill NEVER loses accumulated distance!
+        if (processResult.distanceIncrementM > 0.0 || processResult.gapDetected) {
+            saveSnapshotToDatabase()
+        }
     }
 
     private fun recalculateFare() {
@@ -1451,11 +1675,18 @@ class LocationTrackingService : Service() {
                         currentWaitingSeconds = state.waitingSeconds,
                         speedKmH = state.speedKmH,
                         speedThreshold = state.speedThreshold,
-                        msSinceLastMovingFix = msSinceLastMoving
+                        msSinceLastMovingFix = msSinceLastMoving,
+                        meterMode = state.meterMode,
+                        directCategoryId = state.directCategoryId
                     )
 
-                    val activeTripType = SangamTariffConfig.SangamTripType.fromId(state.sangamTripTypeId)
-                    val updatedPackageHours = if (activeTripType == SangamTariffConfig.SangamTripType.HOURLY_RENTAL) {
+                    val isHourlyMode = if (state.meterMode == SangamTariffConfig.METER_MODE_DIRECT) {
+                        SangamTariffConfig.DirectMeterCategory.fromId(state.directCategoryId) == SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL
+                    } else {
+                        SangamTariffConfig.SangamTripType.fromId(state.sangamTripTypeId) == SangamTariffConfig.SangamTripType.HOURLY_RENTAL
+                    }
+
+                    val updatedPackageHours = if (isHourlyMode) {
                         maxOf(
                             state.packageHours.coerceAtLeast(1),
                             FareCalculator.calculateBillableHours(nextElapsed).toInt()
@@ -1476,7 +1707,7 @@ class LocationTrackingService : Service() {
                     recalculateFare()
                     updateNotification()
 
-                    if (nextElapsed % 5 == 0L) {
+                    if (nextElapsed % 3 == 0L) {
                         saveSnapshotToDatabase()
                     }
                 }
@@ -1514,56 +1745,84 @@ class LocationTrackingService : Service() {
         timerJob = null
     }
 
-    private fun saveSnapshotToDatabase() {
+    private fun buildActiveTripRecord(state: TripState): ActiveTripRecord {
+        return ActiveTripRecord(
+            tripNumber = state.tripNumber,
+            startTime = state.startTime,
+            distanceKm = state.distanceKm,
+            durationSeconds = state.durationSeconds,
+            waitingSeconds = state.waitingSeconds,
+            currentFare = state.currentFare,
+            isPaused = state.status == TripStatus.PAUSED,
+            baseFare = state.baseFare,
+            farePerKm = state.farePerKm,
+            waitFarePerMin = state.waitFarePerMin,
+            currency = state.currency,
+            isOutOfCity = state.isOutOfCity,
+            pickupAddress = state.pickupAddress,
+            serviceType = state.serviceType,
+            rentalBaseHours = state.rentalMinHours,
+            rentalBaseKm = state.rentalIncludedKmPerHour,
+            rentalBaseFare = state.rentalHourlyRate,
+            rentalExtraKmRate = state.rentalExtraKmRate,
+            rentalExtraHrRate = state.rentalExtraHrRate,
+            billableHours = state.billableHours,
+            outstationRatePerKm = state.outstationRatePerKm,
+            outstationMinKm = 0.0,
+            outstationDriverBata = state.outstationDriverBata,
+            outstationMinFare = state.outstationMinFare,
+            outstationWaitRate = state.outstationWaitRate,
+            outstationAdditionalCharges = state.outstationAdditionalCharges,
+            extraChargesJson = ExtraChargeItem.serialize(state.extraChargeItems),
+            routePointsJson = com.example.util.RouteCoordinatesSerializer.serialize(state.routePoints),
+            vendorId = state.vendorId,
+            vendorName = state.vendorName,
+            vendorLogoAsset = state.vendorLogoAsset,
+            vendorContactNumber = state.vendorContactNumber,
+            vendorBusinessAddress = state.vendorBusinessAddress,
+            vendorEmail = state.vendorEmail,
+            vendorGstin = state.vendorGstin,
+            vendorInvoiceDetails = state.vendorInvoiceDetails,
+            vehicleCategoryId = state.vehicleCategoryId,
+            sangamTripTypeId = state.sangamTripTypeId,
+            isInnovaCrysta = state.isInnovaCrysta,
+            isNightTrip = state.isNightTrip,
+            over12Hours = state.over12Hours,
+            packageHours = state.packageHours,
+            meterMode = state.meterMode,
+            directCategoryId = state.directCategoryId,
+            directTariffSnapshotJson = state.directTariffSnapshotJson,
+            use100KmPackage = state.use100KmPackage,
+            lastAcceptedLat = state.lastAcceptedLat.takeIf { it != 0.0 } ?: (state.latitude ?: 0.0),
+            lastAcceptedLng = state.lastAcceptedLng.takeIf { it != 0.0 } ?: (state.longitude ?: 0.0),
+            lastAcceptedLocationTimeMs = state.lastAcceptedLocationTimeMs,
+            isWaitingActive = !state.isMoving && state.status == TripStatus.RUNNING,
+            unverifiedGapSeconds = state.unverifiedGapSeconds,
+            unverifiedGapStraightLineKm = state.unverifiedGapStraightLineKm,
+            needsDistanceVerification = state.needsDistanceVerification
+        )
+    }
+
+    private fun saveSnapshotToDatabase(blocking: Boolean = false) {
         val state = _tripState.value
         if (state.status == TripStatus.RUNNING || state.status == TripStatus.PAUSED) {
-            serviceScope.launch(Dispatchers.IO) {
-                repository.saveActiveTrip(
-                    ActiveTripRecord(
-                        tripNumber = state.tripNumber,
-                        startTime = state.startTime,
-                        distanceKm = state.distanceKm,
-                        durationSeconds = state.durationSeconds,
-                        waitingSeconds = state.waitingSeconds,
-                        currentFare = state.currentFare,
-                        isPaused = state.status == TripStatus.PAUSED,
-                        baseFare = state.baseFare,
-                        farePerKm = state.farePerKm,
-                        waitFarePerMin = state.waitFarePerMin,
-                        currency = state.currency,
-                        isOutOfCity = state.isOutOfCity,
-                        pickupAddress = state.pickupAddress,
-                        serviceType = state.serviceType,
-                        rentalBaseHours = state.rentalMinHours,
-                        rentalBaseKm = state.rentalIncludedKmPerHour,
-                        rentalBaseFare = state.rentalHourlyRate,
-                        rentalExtraKmRate = state.rentalExtraKmRate,
-                        rentalExtraHrRate = state.rentalExtraHrRate,
-                        billableHours = state.billableHours,
-                        outstationRatePerKm = state.outstationRatePerKm,
-                        outstationMinKm = 0.0,
-                        outstationDriverBata = state.outstationDriverBata,
-                        outstationMinFare = state.outstationMinFare,
-                        outstationWaitRate = state.outstationWaitRate,
-                        outstationAdditionalCharges = state.outstationAdditionalCharges,
-                        extraChargesJson = ExtraChargeItem.serialize(state.extraChargeItems),
-                        routePointsJson = com.example.util.RouteCoordinatesSerializer.serialize(state.routePoints),
-                        vendorId = state.vendorId,
-                        vendorName = state.vendorName,
-                        vendorLogoAsset = state.vendorLogoAsset,
-                        vendorContactNumber = state.vendorContactNumber,
-                        vendorBusinessAddress = state.vendorBusinessAddress,
-                        vendorEmail = state.vendorEmail,
-                        vendorGstin = state.vendorGstin,
-                        vendorInvoiceDetails = state.vendorInvoiceDetails,
-                        vehicleCategoryId = state.vehicleCategoryId,
-                        sangamTripTypeId = state.sangamTripTypeId,
-                        isInnovaCrysta = state.isInnovaCrysta,
-                        isNightTrip = state.isNightTrip,
-                        over12Hours = state.over12Hours,
-                        packageHours = state.packageHours
-                    )
-                )
+            val record = buildActiveTripRecord(state)
+            if (blocking) {
+                try {
+                    runBlocking(Dispatchers.IO) {
+                        repository.saveActiveTrip(record)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Blocking active trip snapshot save failed", e)
+                }
+            } else {
+                serviceScope.launch(Dispatchers.IO) {
+                    try {
+                        repository.saveActiveTrip(record)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Async active trip snapshot save failed", e)
+                    }
+                }
             }
         }
     }
@@ -1683,8 +1942,9 @@ class LocationTrackingService : Service() {
         val isTripActive = state.status == TripStatus.RUNNING || state.status == TripStatus.PAUSED
 
         if (isTripActive) {
-            Log.d(TAG, "onTaskRemoved: Keeping service and speedometer bubble alive in background during active trip")
-            recordDiagnostic("App minimized/task removed — keeping active trip meter & bubble alive")
+            Log.d(TAG, "onTaskRemoved: Persisting active trip snapshot & keeping tracking service alive")
+            recordDiagnostic("App swiped/backgrounded — saved ${String.format(Locale.US, "%.2f", state.distanceKm)} km & keeping trip alive")
+            saveSnapshotToDatabase(blocking = true)
             acquireWakeLock()
             if (floatingSpeedOverlay.isOverlayEnabled()) {
                 floatingSpeedOverlay.show()
@@ -1702,6 +1962,11 @@ class LocationTrackingService : Service() {
     override fun onDestroy() {
         val state = _tripState.value
         val shouldRestart = state.status == TripStatus.RUNNING || state.status == TripStatus.PAUSED
+
+        if (shouldRestart) {
+            // CRITICAL: Persist exact accumulated distance & GPS anchor BEFORE cancelling serviceScope!
+            saveSnapshotToDatabase(blocking = true)
+        }
 
         super.onDestroy()
         Log.d(TAG, "onDestroy: Stopping tracking service (shouldRestart=$shouldRestart)")

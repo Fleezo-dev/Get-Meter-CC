@@ -61,9 +61,35 @@ class SettingsRepository(private val context: Context) {
         const val DEFAULT_DISTANCE_CALIBRATION_FACTOR = 1.0
         val KEY_DISTANCE_CALIBRATION_FACTOR = doublePreferencesKey("distance_calibration_factor")
 
-        // Floating Speedometer Bubble Overlay (Default true = automatically show on minimize)
-        const val DEFAULT_FLOATING_BUBBLE_ENABLED = true
+        // Floating Speedometer Bubble Overlay (Default false = optional, never forced on drivers)
+        const val DEFAULT_FLOATING_BUBBLE_ENABLED = false
         val KEY_FLOATING_BUBBLE_ENABLED = booleanPreferencesKey("floating_bubble_enabled")
+
+        // Application Appearance Mode ("AUTO", "DAY", "NIGHT")
+        const val APPEARANCE_AUTO = "AUTO"
+        const val APPEARANCE_DAY = "DAY"
+        const val APPEARANCE_NIGHT = "NIGHT"
+        const val DEFAULT_APPEARANCE_MODE = APPEARANCE_AUTO
+        val KEY_APPEARANCE_MODE = stringPreferencesKey("appearance_mode")
+
+        // Independent Direct Meter Mode Default Tariffs (completely separate from OTP Meter tariffs)
+        const val DEFAULT_DIRECT_LOCAL_BASE_FARE = 100.0
+        const val DEFAULT_DIRECT_LOCAL_PER_KM_RATE = 30.0
+        const val DEFAULT_DIRECT_HOURLY_BASE_FARE = 375.0
+        const val DEFAULT_DIRECT_HOURLY_INCLUDED_KM = 10.0
+        const val DEFAULT_DIRECT_HOURLY_EXTRA_KM_RATE = 20.0
+        const val DEFAULT_DIRECT_OUTSTATION_BASE_FARE = 300.0
+        const val DEFAULT_DIRECT_OUTSTATION_PER_KM_RATE = 30.0
+        const val DEFAULT_DIRECT_WAITING_CHARGE_PER_MIN = 2.0
+
+        val KEY_DIRECT_LOCAL_BASE_FARE = doublePreferencesKey("direct_local_base_fare")
+        val KEY_DIRECT_LOCAL_PER_KM_RATE = doublePreferencesKey("direct_local_per_km_rate")
+        val KEY_DIRECT_HOURLY_BASE_FARE = doublePreferencesKey("direct_hourly_base_fare")
+        val KEY_DIRECT_HOURLY_INCLUDED_KM = doublePreferencesKey("direct_hourly_included_km")
+        val KEY_DIRECT_HOURLY_EXTRA_KM_RATE = doublePreferencesKey("direct_hourly_extra_km_rate")
+        val KEY_DIRECT_OUTSTATION_BASE_FARE = doublePreferencesKey("direct_outstation_base_fare")
+        val KEY_DIRECT_OUTSTATION_PER_KM_RATE = doublePreferencesKey("direct_outstation_per_km_rate")
+        val KEY_DIRECT_WAITING_CHARGE_PER_MIN = doublePreferencesKey("direct_waiting_charge_per_min")
 
         // Application Language (Default "en" = English, "ta" = Tamil)
         const val DEFAULT_APP_LANGUAGE = "en"
@@ -95,10 +121,59 @@ class SettingsRepository(private val context: Context) {
         if (raw == "ta") "ta" else "en"
     }
 
-    // Floating Speedometer Bubble Flow
+    // Floating Speedometer Bubble Flow (Optional, OFF by default)
     val floatingBubbleEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[KEY_FLOATING_BUBBLE_ENABLED] ?: DEFAULT_FLOATING_BUBBLE_ENABLED
     }
+
+    // Appearance Mode Flow ("AUTO", "DAY", "NIGHT")
+    val appearanceMode: Flow<String> = context.dataStore.data.map { preferences ->
+        when (preferences[KEY_APPEARANCE_MODE]) {
+            APPEARANCE_DAY -> APPEARANCE_DAY
+            APPEARANCE_NIGHT -> APPEARANCE_NIGHT
+            else -> APPEARANCE_AUTO
+        }
+    }
+
+    // Independent Direct Meter Tariff Flows
+    val directLocalBaseFare: Flow<Double> = context.dataStore.data.map {
+        it[KEY_DIRECT_LOCAL_BASE_FARE] ?: DEFAULT_DIRECT_LOCAL_BASE_FARE
+    }
+    val directLocalPerKmRate: Flow<Double> = context.dataStore.data.map {
+        it[KEY_DIRECT_LOCAL_PER_KM_RATE] ?: DEFAULT_DIRECT_LOCAL_PER_KM_RATE
+    }
+    val directHourlyBaseFare: Flow<Double> = context.dataStore.data.map {
+        it[KEY_DIRECT_HOURLY_BASE_FARE] ?: DEFAULT_DIRECT_HOURLY_BASE_FARE
+    }
+    val directHourlyIncludedKm: Flow<Double> = context.dataStore.data.map {
+        it[KEY_DIRECT_HOURLY_INCLUDED_KM] ?: DEFAULT_DIRECT_HOURLY_INCLUDED_KM
+    }
+    val directHourlyExtraKmRate: Flow<Double> = context.dataStore.data.map {
+        it[KEY_DIRECT_HOURLY_EXTRA_KM_RATE] ?: DEFAULT_DIRECT_HOURLY_EXTRA_KM_RATE
+    }
+    val directOutstationBaseFare: Flow<Double> = context.dataStore.data.map {
+        it[KEY_DIRECT_OUTSTATION_BASE_FARE] ?: DEFAULT_DIRECT_OUTSTATION_BASE_FARE
+    }
+    val directOutstationPerKmRate: Flow<Double> = context.dataStore.data.map {
+        it[KEY_DIRECT_OUTSTATION_PER_KM_RATE] ?: DEFAULT_DIRECT_OUTSTATION_PER_KM_RATE
+    }
+    val directWaitingChargePerMin: Flow<Double> = context.dataStore.data.map {
+        it[KEY_DIRECT_WAITING_CHARGE_PER_MIN] ?: DEFAULT_DIRECT_WAITING_CHARGE_PER_MIN
+    }
+
+    val directMeterTariffSnapshot: Flow<com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot> =
+        context.dataStore.data.map { prefs ->
+            com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot(
+                localBaseFare = prefs[KEY_DIRECT_LOCAL_BASE_FARE] ?: DEFAULT_DIRECT_LOCAL_BASE_FARE,
+                localPerKmRate = prefs[KEY_DIRECT_LOCAL_PER_KM_RATE] ?: DEFAULT_DIRECT_LOCAL_PER_KM_RATE,
+                hourlyBaseFare = prefs[KEY_DIRECT_HOURLY_BASE_FARE] ?: DEFAULT_DIRECT_HOURLY_BASE_FARE,
+                hourlyIncludedKm = prefs[KEY_DIRECT_HOURLY_INCLUDED_KM] ?: DEFAULT_DIRECT_HOURLY_INCLUDED_KM,
+                hourlyExtraKmRate = prefs[KEY_DIRECT_HOURLY_EXTRA_KM_RATE] ?: DEFAULT_DIRECT_HOURLY_EXTRA_KM_RATE,
+                outstationBaseFare = prefs[KEY_DIRECT_OUTSTATION_BASE_FARE] ?: DEFAULT_DIRECT_OUTSTATION_BASE_FARE,
+                outstationPerKmRate = prefs[KEY_DIRECT_OUTSTATION_PER_KM_RATE] ?: DEFAULT_DIRECT_OUTSTATION_PER_KM_RATE,
+                waitingChargePerMin = prefs[KEY_DIRECT_WAITING_CHARGE_PER_MIN] ?: DEFAULT_DIRECT_WAITING_CHARGE_PER_MIN
+            )
+        }
 
     // Distance Calibration Flow
     val distanceCalibrationFactor: Flow<Double> = context.dataStore.data.map { preferences ->
@@ -305,6 +380,34 @@ class SettingsRepository(private val context: Context) {
                 preferences.remove(KEY_DISTANCE_CALIBRATION_FACTOR)
             }
         }
+    }
+
+    suspend fun updateAppearanceMode(mode: String) {
+        val normalized = when (mode.uppercase()) {
+            APPEARANCE_DAY -> APPEARANCE_DAY
+            APPEARANCE_NIGHT -> APPEARANCE_NIGHT
+            else -> APPEARANCE_AUTO
+        }
+        context.dataStore.edit { preferences ->
+            preferences[KEY_APPEARANCE_MODE] = normalized
+        }
+    }
+
+    suspend fun saveDirectMeterSettings(snapshot: com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_DIRECT_LOCAL_BASE_FARE] = snapshot.localBaseFare.coerceAtLeast(0.0)
+            preferences[KEY_DIRECT_LOCAL_PER_KM_RATE] = snapshot.localPerKmRate.coerceAtLeast(0.0)
+            preferences[KEY_DIRECT_HOURLY_BASE_FARE] = snapshot.hourlyBaseFare.coerceAtLeast(0.0)
+            preferences[KEY_DIRECT_HOURLY_INCLUDED_KM] = snapshot.hourlyIncludedKm.coerceAtLeast(0.0)
+            preferences[KEY_DIRECT_HOURLY_EXTRA_KM_RATE] = snapshot.hourlyExtraKmRate.coerceAtLeast(0.0)
+            preferences[KEY_DIRECT_OUTSTATION_BASE_FARE] = snapshot.outstationBaseFare.coerceAtLeast(0.0)
+            preferences[KEY_DIRECT_OUTSTATION_PER_KM_RATE] = snapshot.outstationPerKmRate.coerceAtLeast(0.0)
+            preferences[KEY_DIRECT_WAITING_CHARGE_PER_MIN] = snapshot.waitingChargePerMin.coerceAtLeast(0.0)
+        }
+    }
+
+    suspend fun resetDirectMeterDefaults() {
+        saveDirectMeterSettings(com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot())
     }
 
     suspend fun resetToDefaultTariffs() {

@@ -16,16 +16,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.LocalGetTaxiColors
 import com.example.util.SangamTariffConfig
+import com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot
 import com.example.util.SangamTariffConfig.VehicleCategory
 
-private val TdBlack = Color(0xFF090A0C)
-private val TdCharcoal = Color(0xFF14171C)
-private val TdCard = Color(0xFF1E222A)
-private val TdBorder = Color(0xFF2D333E)
-private val TdYellow = Color(0xFFFFC107)
-private val TdWhite = Color(0xFFFFFFFF)
-private val TdMuted = Color(0xFF9CA3AF)
 private val TdAmber = Color(0xFFF59E0B)
 
 /**
@@ -38,11 +33,8 @@ fun TariffDetailsScreen(
     onNavigateBack: () -> Unit
 ) {
     BackHandler(onBack = onNavigateBack)
-
+    val colors = LocalGetTaxiColors.current
     val outstationRef = SangamTariffConfig.outstationRates[VehicleCategory.MINI]
-    val hourlyTableSummary = SangamTariffConfig.hourlyPackagesUniform.entries.joinToString("  •  ") { (hr, amt) ->
-        "${hr}h: ₹${amt.toInt()}"
-    }
 
     Scaffold(
         topBar = {
@@ -50,7 +42,7 @@ fun TariffDetailsScreen(
                 title = {
                     Text(
                         text = "GET TAXI TARIFF DETAILS",
-                        color = TdYellow,
+                        color = colors.primaryAccent,
                         fontWeight = FontWeight.Black,
                         fontSize = 17.sp,
                         letterSpacing = 0.8.sp,
@@ -65,14 +57,14 @@ fun TariffDetailsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = TdYellow
+                            tint = colors.primaryAccent
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = TdBlack)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface)
             )
         },
-        containerColor = TdCharcoal
+        containerColor = colors.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -91,25 +83,48 @@ fun TariffDetailsScreen(
             )
 
             TariffDetailCard(
-                title = "HOURLY RENTAL TARIFF (UNIFORM ALL VEHICLES)",
+                title = "OTP HOURLY RENTAL TARIFF (COMMISSION INCLUDED IN METER RATE)",
                 lines = listOf(
-                    "Rate: ₹${SangamTariffConfig.hourlyRatePerChargedHour.toInt()} per billed hour",
-                    "Included Distance: ${SangamTariffConfig.hourlyIncludedKmPerHour} km per billed hour",
-                    "Extra Distance Rate: ₹${SangamTariffConfig.hourlyExtraKmRate.toInt()} per km",
-                    "Grace Period: 5 minutes after each completed hour block",
-                    "Waiting Charges: ₹${SangamTariffConfig.hourlyWaitingPerMin.toInt()} (Zero waiting time charged)",
-                    "Driver CC: ₹${SangamTariffConfig.hourlyDriverCcPerChargedHour.toInt()} per billed hour (No 10% CC)",
-                    "Packages (1h–12h): $hourlyTableSummary"
+                    "MINI / SEDAN: ₹350/hr (Min 1h, 10 km/hr, Extra ₹20/km, CC ₹50/hr included)",
+                    "OMNI / Eeco: ₹450/hr (Incl. ₹75 CC) • 100 KM / 10h Package ₹3,500 • Extra ₹13/km",
+                    "Ertiga / Rumion (SUV/SUV+): ₹525/hr (Incl. ₹75 CC, Min 3h) • 100 KM / 10h Package ₹3,800 • Extra ₹14/km",
+                    "Innova: ₹600/hr (Incl. ₹100 CC, Min 4h) • 100 KM / 10h Package ₹4,000 • Extra ₹15/km",
+                    "Grace Period: 5 minutes after each completed hour block • Waiting Charge: ₹0",
+                    "Hourly commission is already included in the hourly meter rate (never added twice)."
                 )
             )
 
             TariffDetailCard(
-                title = "OUTSTATION TARIFF (ALL 5 CATEGORIES)",
+                title = "DIRECT METER MODE (NO OTP • CUSTOMER INVOICE ONLY)",
+                lines = listOf(
+                    "Local Default: Base ₹${DirectMeterTariffSnapshot.DEFAULT_DIRECT_LOCAL_BASE.toInt()} + ₹${DirectMeterTariffSnapshot.DEFAULT_DIRECT_LOCAL_PER_KM.toInt()}/km",
+                    "Hourly Rental Default: ₹${DirectMeterTariffSnapshot.DEFAULT_DIRECT_HOURLY_BASE.toInt()}/hr (Includes ${DirectMeterTariffSnapshot.DEFAULT_DIRECT_HOURLY_INCLUDED_KM.toInt()} km/hr, Extra ₹${DirectMeterTariffSnapshot.DEFAULT_DIRECT_HOURLY_EXTRA_KM.toInt()}/km)",
+                    "Outstation Default: Base ₹${DirectMeterTariffSnapshot.DEFAULT_DIRECT_OUTSTATION_BASE.toInt()} + ₹${DirectMeterTariffSnapshot.DEFAULT_DIRECT_OUTSTATION_PER_KM.toInt()}/km",
+                    "Default Waiting Charge: ₹${DirectMeterTariffSnapshot.DEFAULT_DIRECT_WAITING_PER_MIN.toInt()}/min (Local & Outstation)",
+                    "Fully editable independently in Settings → Direct Meter Settings. Zero Vendor CC & zero GPay settlement."
+                )
+            )
+
+            TariffDetailCard(
+                title = "AUTOMATIC LOCAL CC RULES (OTP METER ONLY — ZERO GAPS)",
+                accentColor = TdAmber,
+                lines = listOf(
+                    "0 – 5.00 KM: ₹25",
+                    "> 5.00 – 7.50 KM: ₹50",
+                    "> 7.50 – 10.00 KM: ₹70",
+                    "> 10.00 – 20.00 KM: ₹80",
+                    "> 20.00 KM: ₹100",
+                    "Entire Customer Bill > ₹1,000 (including additional charges): 10% of ENTIRE customer bill (replaces fixed distance CC)."
+                )
+            )
+
+            TariffDetailCard(
+                title = "OUTSTATION TARIFF (OTP METER)",
                 lines = listOf(
                     "One-Way: ₹${outstationRef?.oneWayInitialCharge?.toInt() ?: 300} base + ₹${outstationRef?.oneWayPerKm?.toInt() ?: 30}/km",
                     "Round-Trip: ₹${outstationRef?.roundTripInitialCharge?.toInt() ?: 500} base + ₹${outstationRef?.roundTripPerKm?.toInt() ?: 15}/km",
                     "Driver Allowance (>12 Hours): ₹${SangamTariffConfig.outstationOver12HoursDriverAllowance.toInt()}",
-                    "Company Commission (CC): ${(SangamTariffConfig.outstationCommissionPercent.toDouble() * 100).toInt()}% on tariff subtotal (excl. toll/permit/parking)",
+                    "Company Commission (CC): ${(SangamTariffConfig.outstationCommissionPercent.toDouble() * 100).toInt()}% on tariff subtotal (or 10% of total if > ₹1,000)",
                     "Additional Waiting: Manual entry only via Extra Charges (no automatic waiting timer)"
                 )
             )
@@ -128,9 +143,8 @@ fun TariffDetailsScreen(
                         "${cat.displayName}: ₹${normal.initialCharge.toInt()} + ₹${normal.perKmRate.toInt()}/km | $minDesc"
                     }
                 } + listOf(
-                    "Waiting Charge: ₹${SangamTariffConfig.localWaitingRatePerMin.toInt()}/min (Local Normal & Local Min Bill — separate from Vendor CC)",
-                    "Modifiers: Outside City +₹${SangamTariffConfig.localOutsideCityCharge.toInt()} | Night (11 PM–6 AM) +₹${SangamTariffConfig.localNightCharge.toInt()}",
-                    "Local CC Slabs: 1–5 KM ₹30 | 6–10 KM ₹60–₹75 | 10–25 KM ₹80 | >25 KM or >₹800 Bill 10% (base tariff excl. waiting)"
+                    "Waiting Charge: ₹${SangamTariffConfig.localWaitingRatePerMin.toInt()}/min (Local Normal & Local Min Bill)",
+                    "Additional Charges: Outside City Limits & Night Allowance (11 PM–6 AM) are MANUAL amount entry only (no automatic ₹80/₹50)."
                 )
             )
 
@@ -146,11 +160,11 @@ fun TariffDetailsScreen(
             )
 
             TariffDetailCard(
-                title = "DRIVER CC PAYMENT REFERENCE",
+                title = "DRIVER CC PAYMENT REFERENCE (OTP METER ONLY)",
                 accentColor = TdAmber,
                 lines = listOf(
                     "Official GET TAXI GPay Number: ${SangamTariffConfig.VENDOR_GPAY_NUMBER}",
-                    "Driver CC is shown strictly in Driver Settlement & Internal CC Report (hidden from Customer Invoices)."
+                    "Driver CC is shown strictly in OTP Driver Settlement & Internal CC Report (hidden from Customer Invoices and Direct Meter)."
                 )
             )
 
@@ -163,12 +177,14 @@ fun TariffDetailsScreen(
 private fun TariffDetailCard(
     title: String,
     lines: List<String>,
-    accentColor: Color = TdYellow
+    accentColor: Color? = null
 ) {
+    val colors = LocalGetTaxiColors.current
+    val resolvedAccent = accentColor ?: colors.yellowText
     Card(
-        colors = CardDefaults.cardColors(containerColor = TdCard),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, TdBorder),
+        border = BorderStroke(1.dp, colors.border),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -177,16 +193,16 @@ private fun TariffDetailCard(
         ) {
             Text(
                 text = title,
-                color = accentColor,
+                color = resolvedAccent,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 1.sp
             )
-            HorizontalDivider(color = TdBorder)
+            HorizontalDivider(color = colors.border)
             lines.forEach { line ->
                 Text(
                     text = "• $line",
-                    color = TdWhite,
+                    color = colors.textPrimary,
                     fontSize = 12.sp,
                     lineHeight = 17.sp
                 )

@@ -1,12 +1,13 @@
 package com.example.util
 
+import org.json.JSONObject
 import java.math.BigDecimal
 
 /**
  * Authoritative Tariff Configuration for GET TAXI.
  *
- * Vehicle classifications, fixed rate cards, hourly package tables, and
- * commission rules are isolated here for verification and testability.
+ * Vehicle classifications, fixed rate cards, hourly package tables, Direct Meter defaults,
+ * and automatic commission rules are isolated here for verification and testability.
  */
 object SangamTariffConfig {
 
@@ -14,6 +15,12 @@ object SangamTariffConfig {
     const val VENDOR_NAME = "GET TAXI"
     const val VENDOR_GPAY_NUMBER = "9043743777"
     const val CURRENCY_SYMBOL = "₹"
+
+    const val METER_MODE_OTP = "OTP"
+    const val METER_MODE_DIRECT = "DIRECT"
+
+    const val EXTRA_LABEL_OUTSIDE_CITY = "Outside City Limits"
+    const val EXTRA_LABEL_NIGHT_ALLOWANCE = "Night Allowance (11 PM–6 AM)"
 
     enum class VehicleCategory(
         val id: String,
@@ -34,15 +41,21 @@ object SangamTariffConfig {
             shortLabel = "SEDAN",
             exampleModels = "Dzire, Aura, Amaze, Etios"
         ),
+        OMNI_EECO(
+            id = "OMNI_EECO",
+            displayName = "OMNI / EECO",
+            shortLabel = "OMNI/EECO",
+            exampleModels = "Maruti Omni, Maruti Eeco"
+        ),
         SUV(
             id = "SUV",
-            displayName = "SUV",
+            displayName = "SUV (Ertiga)",
             shortLabel = "SUV",
-            exampleModels = "Ertiga & similar 6–7 seaters"
+            exampleModels = "Ertiga, Rumion & similar 6–7 seaters"
         ),
         SUV_PLUS(
             id = "SUV_PLUS",
-            displayName = "SUV+",
+            displayName = "SUV+ (Rumion)",
             shortLabel = "SUV+",
             exampleModels = "Ertiga, Rumion, Xylo, Marazzo (Premium)"
         ),
@@ -54,7 +67,11 @@ object SangamTariffConfig {
         );
 
         fun supportedTripTypes(): List<SangamTripType> {
-            return SangamTripType.entries
+            return if (this == OMNI_EECO) {
+                listOf(SangamTripType.HOURLY_RENTAL)
+            } else {
+                SangamTripType.entries
+            }
         }
 
         companion object {
@@ -85,7 +102,81 @@ object SangamTariffConfig {
     }
 
     // =========================================================================
-    // ISOLATED UNRESOLVED CHART RULES
+    // DIRECT METER MODE (INDEPENDENT OF OTP TARIFF & VENDOR CC)
+    // =========================================================================
+
+    enum class DirectMeterCategory(
+        val id: String,
+        val displayName: String,
+        val shortLabel: String
+    ) {
+        LOCAL("LOCAL", "Local", "Local"),
+        HOURLY_RENTAL("HOURLY_RENTAL", "Hourly Rental", "Hourly"),
+        OUTSTATION("OUTSTATION", "Outstation", "Outstation");
+
+        companion object {
+            fun fromId(id: String?): DirectMeterCategory {
+                return entries.firstOrNull { it.id.equals(id?.trim(), ignoreCase = true) } ?: LOCAL
+            }
+        }
+    }
+
+    data class DirectMeterTariffSnapshot(
+        val localBaseFare: Double = DEFAULT_DIRECT_LOCAL_BASE,
+        val localPerKmRate: Double = DEFAULT_DIRECT_LOCAL_PER_KM,
+        val hourlyBaseFare: Double = DEFAULT_DIRECT_HOURLY_BASE,
+        val hourlyIncludedKm: Double = DEFAULT_DIRECT_HOURLY_INCLUDED_KM,
+        val hourlyExtraKmRate: Double = DEFAULT_DIRECT_HOURLY_EXTRA_KM,
+        val outstationBaseFare: Double = DEFAULT_DIRECT_OUTSTATION_BASE,
+        val outstationPerKmRate: Double = DEFAULT_DIRECT_OUTSTATION_PER_KM,
+        val waitingChargePerMin: Double = DEFAULT_DIRECT_WAITING_PER_MIN
+    ) {
+        fun toJson(): String {
+            return JSONObject().apply {
+                put("localBaseFare", localBaseFare)
+                put("localPerKmRate", localPerKmRate)
+                put("hourlyBaseFare", hourlyBaseFare)
+                put("hourlyIncludedKm", hourlyIncludedKm)
+                put("hourlyExtraKmRate", hourlyExtraKmRate)
+                put("outstationBaseFare", outstationBaseFare)
+                put("outstationPerKmRate", outstationPerKmRate)
+                put("waitingChargePerMin", waitingChargePerMin)
+            }.toString()
+        }
+
+        companion object {
+            const val DEFAULT_DIRECT_LOCAL_BASE = 100.0
+            const val DEFAULT_DIRECT_LOCAL_PER_KM = 30.0
+            const val DEFAULT_DIRECT_HOURLY_BASE = 375.0
+            const val DEFAULT_DIRECT_HOURLY_INCLUDED_KM = 10.0
+            const val DEFAULT_DIRECT_HOURLY_EXTRA_KM = 20.0
+            const val DEFAULT_DIRECT_OUTSTATION_BASE = 300.0
+            const val DEFAULT_DIRECT_OUTSTATION_PER_KM = 30.0
+            const val DEFAULT_DIRECT_WAITING_PER_MIN = 2.0
+
+            fun fromJson(json: String?): DirectMeterTariffSnapshot {
+                if (json.isNullOrBlank()) return DirectMeterTariffSnapshot()
+                return try {
+                    val obj = JSONObject(json)
+                    DirectMeterTariffSnapshot(
+                        localBaseFare = obj.optDouble("localBaseFare", DEFAULT_DIRECT_LOCAL_BASE).coerceAtLeast(0.0),
+                        localPerKmRate = obj.optDouble("localPerKmRate", DEFAULT_DIRECT_LOCAL_PER_KM).coerceAtLeast(0.0),
+                        hourlyBaseFare = obj.optDouble("hourlyBaseFare", DEFAULT_DIRECT_HOURLY_BASE).coerceAtLeast(0.0),
+                        hourlyIncludedKm = obj.optDouble("hourlyIncludedKm", DEFAULT_DIRECT_HOURLY_INCLUDED_KM).coerceAtLeast(0.0),
+                        hourlyExtraKmRate = obj.optDouble("hourlyExtraKmRate", DEFAULT_DIRECT_HOURLY_EXTRA_KM).coerceAtLeast(0.0),
+                        outstationBaseFare = obj.optDouble("outstationBaseFare", DEFAULT_DIRECT_OUTSTATION_BASE).coerceAtLeast(0.0),
+                        outstationPerKmRate = obj.optDouble("outstationPerKmRate", DEFAULT_DIRECT_OUTSTATION_PER_KM).coerceAtLeast(0.0),
+                        waitingChargePerMin = obj.optDouble("waitingChargePerMin", DEFAULT_DIRECT_WAITING_PER_MIN).coerceAtLeast(0.0)
+                    )
+                } catch (_: Exception) {
+                    DirectMeterTariffSnapshot()
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // ISOLATED CHART BOUNDARY RULES
     // =========================================================================
 
     enum class LocalFiveKmBoundaryPolicy {
@@ -108,13 +199,13 @@ object SangamTariffConfig {
 
     data class LocalCommissionConfig(
         val sixToTenKmFixedAmount: BigDecimal? = null,
-        val above25KmAnd800Rule: Above25KmAnd800Rule = Above25KmAnd800Rule.UNRESOLVED_NEEDS_CONFIRMATION,
-        val fiveToSixKmPolicy: CommissionBoundaryPolicy = CommissionBoundaryPolicy.UNRESOLVED_FLAG,
-        val tenKmBoundaryPolicy: CommissionBoundaryPolicy = CommissionBoundaryPolicy.UNRESOLVED_FLAG
+        val above25KmAnd800Rule: Above25KmAnd800Rule = Above25KmAnd800Rule.ALTERNATIVE_SINGLE_10_PERCENT,
+        val fiveToSixKmPolicy: CommissionBoundaryPolicy = CommissionBoundaryPolicy.USE_LOWER_SLAB,
+        val tenKmBoundaryPolicy: CommissionBoundaryPolicy = CommissionBoundaryPolicy.USE_LOWER_SLAB
     )
 
     data class TariffRulesConfig(
-        val miniSedanFiveKmBoundaryPolicy: LocalFiveKmBoundaryPolicy = LocalFiveKmBoundaryPolicy.UNRESOLVED_FLAG,
+        val miniSedanFiveKmBoundaryPolicy: LocalFiveKmBoundaryPolicy = LocalFiveKmBoundaryPolicy.INCLUDE_IN_1_TO_5_KM_200,
         val localCommissionConfig: LocalCommissionConfig = LocalCommissionConfig()
     )
 
@@ -137,9 +228,14 @@ object SangamTariffConfig {
         VehicleCategory.INNOVA to LocalNormalRate(BigDecimal("250"), BigDecimal("50"))
     )
 
-    val localOutsideCityCharge: BigDecimal = BigDecimal("80")
-    val localNightCharge: BigDecimal = BigDecimal("50") // 11 PM – 6 AM
+    // Manual-only additional charge options (NO automatic fixed ₹80 / ₹50 added!)
+    val localOutsideCityCharge: BigDecimal = BigDecimal.ZERO
+    val localNightCharge: BigDecimal = BigDecimal.ZERO
     val localWaitingRatePerMin: BigDecimal = BigDecimal("2") // Confirmed ₹2/min for Local Normal & Local Min Bill
+
+    // Automatic CC slab thresholds
+    val autoCcBillThreshold: BigDecimal = BigDecimal("1000.00")
+    val autoCcOverThresholdPercent: BigDecimal = BigDecimal("0.10")
 
     data class LocalMinimumBillConfig(
         val firstSlabMaxKm: BigDecimal,
@@ -188,9 +284,22 @@ object SangamTariffConfig {
     )
 
     // =========================================================================
-    // HOURLY RENTAL GET TAXI TARIFF (§2)
-    // ₹350 per charged hour, 10 km free per charged hour, ₹20 per extra km, 5-min grace, zero waiting, ₹50 CC/hr
+    // HOURLY RENTAL GET TAXI TARIFFS (COMMISSION ALREADY INCLUDED IN METER RATE)
     // =========================================================================
+
+    data class HourlyVehicleTariff(
+        val hourlyMeterRate: BigDecimal,
+        val commissionPerHour: BigDecimal,
+        val minHours: Int,
+        val includedKmPerHour: Int = 10,
+        val extraKmRate: BigDecimal,
+        val package100KmFare: BigDecimal? = null,
+        val package100KmDutyHours: Int = 10,
+        val package100KmIncludedKm: Int = 100
+    ) {
+        val supports100KmPackage: Boolean
+            get() = package100KmFare != null
+    }
 
     val hourlyRatePerChargedHour: BigDecimal = BigDecimal("350")
     val hourlyIncludedKmPerHour: Int = 10
@@ -198,29 +307,86 @@ object SangamTariffConfig {
     val hourlyWaitingPerMin: BigDecimal = BigDecimal.ZERO
     val hourlyDriverCcPerChargedHour: BigDecimal = BigDecimal("50")
 
-    val hourlyPackagesUniform: Map<Int, BigDecimal> = mapOf(
-        1 to BigDecimal("350"),
-        2 to BigDecimal("700"),
-        3 to BigDecimal("1050"),
-        4 to BigDecimal("1400"),
-        5 to BigDecimal("1750"),
-        6 to BigDecimal("2100"),
-        7 to BigDecimal("2450"),
-        8 to BigDecimal("2800"),
-        9 to BigDecimal("3150"),
-        10 to BigDecimal("3500"),
-        11 to BigDecimal("3850"),
-        12 to BigDecimal("4200")
+    val hourlyVehicleTariffs: Map<VehicleCategory, HourlyVehicleTariff> = mapOf(
+        VehicleCategory.MINI to HourlyVehicleTariff(
+            hourlyMeterRate = BigDecimal("350"),
+            commissionPerHour = BigDecimal("50"),
+            minHours = 1,
+            includedKmPerHour = 10,
+            extraKmRate = BigDecimal("20"),
+            package100KmFare = null
+        ),
+        VehicleCategory.SEDAN to HourlyVehicleTariff(
+            hourlyMeterRate = BigDecimal("350"),
+            commissionPerHour = BigDecimal("50"),
+            minHours = 1,
+            includedKmPerHour = 10,
+            extraKmRate = BigDecimal("20"),
+            package100KmFare = null
+        ),
+        // OMNI / Eeco: Existing ₹375 + Commission ₹75 = ₹450/hr (commission included — never added twice!)
+        VehicleCategory.OMNI_EECO to HourlyVehicleTariff(
+            hourlyMeterRate = BigDecimal("450"),
+            commissionPerHour = BigDecimal("75"),
+            minHours = 1,
+            includedKmPerHour = 10,
+            extraKmRate = BigDecimal("13"),
+            package100KmFare = BigDecimal("3500"),
+            package100KmDutyHours = 10,
+            package100KmIncludedKm = 100
+        ),
+        // Ertiga / Rumion: Existing ₹450 + Commission ₹75 = ₹525/hr, Min 3h, 100 KM / 10h pkg ₹3,800, Extra ₹14/km
+        VehicleCategory.SUV to HourlyVehicleTariff(
+            hourlyMeterRate = BigDecimal("525"),
+            commissionPerHour = BigDecimal("75"),
+            minHours = 3,
+            includedKmPerHour = 10,
+            extraKmRate = BigDecimal("14"),
+            package100KmFare = BigDecimal("3800"),
+            package100KmDutyHours = 10,
+            package100KmIncludedKm = 100
+        ),
+        VehicleCategory.SUV_PLUS to HourlyVehicleTariff(
+            hourlyMeterRate = BigDecimal("525"),
+            commissionPerHour = BigDecimal("75"),
+            minHours = 3,
+            includedKmPerHour = 10,
+            extraKmRate = BigDecimal("14"),
+            package100KmFare = BigDecimal("3800"),
+            package100KmDutyHours = 10,
+            package100KmIncludedKm = 100
+        ),
+        // Innova: Existing ₹500 + Commission ₹100 = ₹600/hr, Min 4h, 100 KM / 10h pkg ₹4,000, Extra ₹15/km
+        VehicleCategory.INNOVA to HourlyVehicleTariff(
+            hourlyMeterRate = BigDecimal("600"),
+            commissionPerHour = BigDecimal("100"),
+            minHours = 4,
+            includedKmPerHour = 10,
+            extraKmRate = BigDecimal("15"),
+            package100KmFare = BigDecimal("4000"),
+            package100KmDutyHours = 10,
+            package100KmIncludedKm = 100
+        )
     )
 
-    fun hourlyPackageTableFor(category: VehicleCategory): Map<Int, BigDecimal>? {
-        return hourlyPackagesUniform
+    fun hourlyTariffFor(category: VehicleCategory): HourlyVehicleTariff {
+        return hourlyVehicleTariffs[category] ?: hourlyVehicleTariffs.getValue(VehicleCategory.MINI)
+    }
+
+    val hourlyPackagesUniform: Map<Int, BigDecimal> = (1..12).associateWith { hr ->
+        hourlyRatePerChargedHour.multiply(BigDecimal(hr))
+    }
+
+    fun hourlyPackageTableFor(category: VehicleCategory): Map<Int, BigDecimal> {
+        val tariff = hourlyTariffFor(category)
+        return (tariff.minHours..12).associateWith { hr ->
+            tariff.hourlyMeterRate.multiply(BigDecimal(hr))
+        }
     }
 
     // =========================================================================
-    // OUTSTATION GET TAXI TARIFFS (§3, §4)
-    // One-way: Base ₹300 + ₹30/km
-    // Round-trip: Base ₹500 + ₹15/km
+    // OUTSTATION GET TAXI TARIFFS
+    // One-way: Base ₹300 + ₹30/km | Round-trip: Base ₹500 + ₹15/km
     // =========================================================================
 
     data class OutstationRate(

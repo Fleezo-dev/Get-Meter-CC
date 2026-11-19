@@ -39,9 +39,9 @@ import com.example.data.model.ActiveTripDisplayMode
 import com.example.data.model.ExtraChargeItem
 import com.example.data.model.TripStatus
 import com.example.service.LocationTrackingService
+import com.example.ui.components.ActiveMeterDashboardBackground
 import com.example.ui.components.BatteryOptimizationCard
 import com.example.ui.components.CreatorSignatureBanner
-import com.example.ui.components.FloatingSpeedPermissionCard
 import com.example.ui.components.LiveSpeedBubble
 import com.example.ui.components.LogoStyleCustomizerDialog
 import com.example.ui.components.QuickFareCalculatorDialog
@@ -50,6 +50,7 @@ import com.example.ui.components.SangamTripTypeSelectorCard
 import com.example.ui.components.TripMapView
 import com.example.ui.components.VehicleCategorySelectorCard
 import com.example.ui.components.VendorLogoBadge
+import com.example.ui.theme.LocalGetTaxiColors
 import com.example.data.preferences.OtpValidationResult
 import com.example.util.SangamTariffConfig
 import com.example.util.SangamTariffConfig.SangamTripType
@@ -58,14 +59,6 @@ import com.example.viewmodel.MeterViewModel
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-private val HudBlack = Color(0xFF090A0C)
-private val HudCharcoal = Color(0xFF14171C)
-private val HudCard = Color(0xFF1E222A)
-private val HudBorder = Color(0xFF2D333E)
-private val HudYellow = Color(0xFFFFC107)
-private val HudWhite = Color(0xFFFFFFFF)
-private val HudMuted = Color(0xFF9CA3AF)
-private val HudGreen = Color(0xFF22C55E)
 private val HudAmber = Color(0xFFF59E0B)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,27 +70,34 @@ fun HomeMeterScreen(
     onNavigateToAbout: () -> Unit = {},
     onNavigateToSettlement: () -> Unit,
     onNavigateToTariffDetails: () -> Unit = {},
-    onNavigateToHistory: () -> Unit = {}
+    onNavigateToHistory: () -> Unit = {},
+    onNavigateToDirectMeterSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val strings = appStrings()
+    val colors = LocalGetTaxiColors.current
     val scope = rememberCoroutineScope()
 
     val tripState by viewModel.tripState.collectAsStateWithLifecycle()
+    val selectedMeterMode by viewModel.selectedMeterMode.collectAsStateWithLifecycle()
+    val selectedDirectCategory by viewModel.selectedDirectCategory.collectAsStateWithLifecycle()
     val selectedVehicle by viewModel.selectedVehicleCategory.collectAsStateWithLifecycle()
     val selectedTripType by viewModel.selectedSangamTripType.collectAsStateWithLifecycle()
     val isInnovaCrysta by viewModel.isInnovaCrysta.collectAsStateWithLifecycle()
     val isOutsideCity by viewModel.isOutsideCity.collectAsStateWithLifecycle()
     val isNightTrip by viewModel.isNightTrip.collectAsStateWithLifecycle()
     val packageHours by viewModel.packageHours.collectAsStateWithLifecycle()
+    val use100KmPackage by viewModel.use100KmPackage.collectAsStateWithLifecycle()
     val over12Hours by viewModel.over12Hours.collectAsStateWithLifecycle()
     val activeTripDisplayMode by viewModel.activeTripDisplayMode.collectAsStateWithLifecycle()
     val hasBackup by viewModel.hasActiveSessionBackup.collectAsStateWithLifecycle()
     val validationMessage by viewModel.tariffValidationMessage.collectAsStateWithLifecycle()
+    val connectivityStatus by viewModel.connectivityStatus.collectAsStateWithLifecycle()
 
     var showQuickCalculatorDialog by remember { mutableStateOf(false) }
     var showExtraChargesDialog by remember { mutableStateOf(false) }
     var showLogoStyleDialog by remember { mutableStateOf(false) }
+    var showGapAdjustDialog by remember { mutableStateOf(false) }
     var showOtpDialog by remember { mutableStateOf(false) }
     var otpInput by remember { mutableStateOf("") }
     var otpErrorMsg by remember { mutableStateOf<String?>(null) }
@@ -196,7 +196,7 @@ fun HomeMeterScreen(
                         Icon(
                             imageVector = Icons.Default.History,
                             contentDescription = "Trip History",
-                            tint = HudWhite
+                            tint = colors.textPrimary
                         )
                     }
 
@@ -209,7 +209,7 @@ fun HomeMeterScreen(
                         Icon(
                             imageVector = Icons.Default.Business,
                             contentDescription = "Habeeb Digital Solutions (HDS)",
-                            tint = HudYellow
+                            tint = colors.primaryAccent
                         )
                     }
 
@@ -222,7 +222,7 @@ fun HomeMeterScreen(
                         Icon(
                             imageVector = Icons.Default.AccountCircle,
                             contentDescription = strings.profile,
-                            tint = HudWhite
+                            tint = colors.textPrimary
                         )
                     }
 
@@ -235,7 +235,7 @@ fun HomeMeterScreen(
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = strings.settings,
-                            tint = HudMuted
+                            tint = colors.textSecondary
                         )
                     }
 
@@ -249,13 +249,21 @@ fun HomeMeterScreen(
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "More Options",
-                                tint = HudWhite
+                                tint = colors.textPrimary
                             )
                         }
                         DropdownMenu(
                             expanded = showTopMenu,
                             onDismissRequest = { showTopMenu = false }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Direct Meter Settings") },
+                                onClick = {
+                                    showTopMenu = false
+                                    onNavigateToDirectMeterSettings()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Speed, contentDescription = null) }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Trip History") },
                                 onClick = {
@@ -283,10 +291,10 @@ fun HomeMeterScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = HudBlack)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface)
             )
         },
-        containerColor = HudCharcoal
+        containerColor = colors.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -297,13 +305,12 @@ fun HomeMeterScreen(
         ) {
             if (!isTripActive) {
                 BatteryOptimizationCard()
-                FloatingSpeedPermissionCard()
 
                 if (hasBackup && tripState.status == TripStatus.IDLE) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF2B2110)),
+                        colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
                         shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(1.dp, HudYellow),
+                        border = BorderStroke(1.dp, colors.yellowHighlight),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 6.dp)
@@ -314,13 +321,13 @@ fun HomeMeterScreen(
                         ) {
                             Text(
                                 text = strings.unfinishedRideDetected,
-                                color = HudYellow,
+                                color = colors.yellowText,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 15.sp
                             )
                             Text(
                                 text = strings.unfinishedRideDesc,
-                                color = HudWhite,
+                                color = colors.textPrimary,
                                 fontSize = 12.sp,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(vertical = 4.dp)
@@ -333,11 +340,11 @@ fun HomeMeterScreen(
                                     onClick = { viewModel.discardBackup() },
                                     modifier = Modifier.weight(1f).height(48.dp)
                                 ) {
-                                    Text(strings.discard, color = HudMuted, fontWeight = FontWeight.Bold)
+                                    Text(strings.discard, color = colors.textSecondary, fontWeight = FontWeight.Bold)
                                 }
                                 Button(
                                     onClick = { viewModel.recoverTrip() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = HudYellow, contentColor = HudBlack),
+                                    colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
                                     modifier = Modifier.weight(1.4f).height(48.dp)
                                 ) {
                                     Text(strings.resumeRide, fontWeight = FontWeight.Black)
@@ -349,7 +356,7 @@ fun HomeMeterScreen(
 
                 if (validationMessage != null) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF2B2110)),
+                        colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
                         shape = RoundedCornerShape(14.dp),
                         border = BorderStroke(1.dp, HudAmber),
                         modifier = Modifier
@@ -361,7 +368,7 @@ fun HomeMeterScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(validationMessage!!, color = HudWhite, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                            Text(validationMessage!!, color = colors.textPrimary, fontSize = 12.sp, modifier = Modifier.weight(1f))
                             IconButton(onClick = { viewModel.clearValidationMessage() }) {
                                 Icon(Icons.Default.Close, contentDescription = strings.close, tint = HudAmber)
                             }
@@ -370,7 +377,7 @@ fun HomeMeterScreen(
                 }
             }
 
-            // GPS Status & Taxi Meter Vacant/Occupied Header
+            // GPS + Connected-First Status & Taxi Meter Vacant/Occupied Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -383,7 +390,7 @@ fun HomeMeterScreen(
                         modifier = Modifier
                             .size(10.dp)
                             .background(
-                                color = if (tripState.latitude != null) HudGreen else HudAmber,
+                                color = if (tripState.latitude != null) colors.greenSuccess else HudAmber,
                                 shape = CircleShape
                             )
                     )
@@ -391,13 +398,18 @@ fun HomeMeterScreen(
                     Column {
                         Text(
                             text = if (tripState.latitude != null) strings.gpsSignalStrong else strings.acquiringGps,
-                            color = HudWhite,
+                            color = colors.textPrimary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        val netBadge = if (connectivityStatus.isNetworkConnected) {
+                            "Online (${connectivityStatus.transportLabel})"
+                        } else {
+                            "Local Storage Ready"
+                        }
                         Text(
-                            text = "OFFLINE TAXI METER • GET TAXI",
-                            color = HudMuted,
+                            text = "GET TAXI – Smart Taxi Meter • $netBadge",
+                            color = colors.textSecondary,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -406,17 +418,17 @@ fun HomeMeterScreen(
 
                 Surface(
                     color = when (tripState.status) {
-                        TripStatus.RUNNING -> HudYellow
-                        TripStatus.PAUSED -> Color(0xFF451A03)
-                        else -> HudCard
+                        TripStatus.RUNNING -> colors.primaryAccent
+                        TripStatus.PAUSED -> colors.yellowContainer
+                        else -> colors.surface
                     },
                     shape = RoundedCornerShape(20.dp),
                     border = BorderStroke(
                         1.dp,
                         when (tripState.status) {
-                            TripStatus.RUNNING -> HudYellow
+                            TripStatus.RUNNING -> colors.primaryAccent
                             TripStatus.PAUSED -> HudAmber
-                            else -> HudBorder
+                            else -> colors.border
                         }
                     ),
                     modifier = Modifier.testTag("trip_status_badge")
@@ -428,14 +440,56 @@ fun HomeMeterScreen(
                             else -> strings.vacant.uppercase(Locale.US)
                         },
                         color = when (tripState.status) {
-                            TripStatus.RUNNING -> HudBlack
+                            TripStatus.RUNNING -> colors.onPrimaryAccent
                             TripStatus.PAUSED -> HudAmber
-                            else -> HudWhite
+                            else -> colors.textPrimary
                         },
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
+                }
+            }
+
+            // Explicit Auditable GPS Interruption Gap Banner (Never fabricates unmeasured distance!)
+            if (isTripActive && tripState.needsDistanceVerification) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, HudAmber),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .testTag("gps_gap_verification_banner")
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "GPS Interruption Gap Detected (${tripState.unverifiedGapSeconds}s)",
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Saved GPS distance preserved without fabricating missing km. Straight-line ref: ${String.format(Locale.US, "%.2f", tripState.unverifiedGapStraightLineKm)} km.",
+                            color = colors.textSecondary,
+                            fontSize = 11.sp
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { viewModel.dismissGapWarning() },
+                                modifier = Modifier.weight(1f).height(40.dp)
+                            ) {
+                                Text("Keep Recorded KM", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { showGapAdjustDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                                modifier = Modifier.weight(1f).height(40.dp)
+                            ) {
+                                Text("Verify / Add KM", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -458,27 +512,39 @@ fun HomeMeterScreen(
                 )
             } else {
                 if (isTripActive && activeTripDisplayMode == ActiveTripDisplayMode.METER_DETAILS) {
-                    Button(
+                    // Upgraded Active Meter Dashboard with looping background MP4 + route motion
+                    ActiveMeterDashboardBackground(
+                        distanceKm = tripState.distanceKm,
+                        durationSeconds = tripState.durationSeconds,
+                        speedKmH = tripState.speedKmH,
+                        isPaused = tripState.status == TripStatus.PAUSED,
+                        isDirectMeter = tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT,
+                        modifier = Modifier
+                            .padding(vertical = 4.dp)
+                            .testTag("active_meter_video_dashboard")
+                    )
+
+                    OutlinedButton(
                         onClick = { viewModel.showMapDisplay() },
-                        colors = ButtonDefaults.buttonColors(containerColor = HudBlack, contentColor = HudYellow),
-                        border = BorderStroke(1.dp, HudYellow),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = colors.surface, contentColor = colors.primaryAccent),
+                        border = BorderStroke(1.dp, colors.primaryAccent),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
-                            .height(52.dp)
+                            .height(48.dp)
                             .testTag("return_to_map_button")
                     ) {
-                        Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(strings.returnToMapButton, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                        Text(strings.returnToMapButton, fontSize = 13.sp, fontWeight = FontWeight.Black)
                     }
                 } else {
                     TripMapView(
                         tripState = tripState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(210.dp)
+                            .height(190.dp)
                             .padding(vertical = 4.dp)
                     )
                 }
@@ -490,46 +556,109 @@ fun HomeMeterScreen(
                     onOpenExtras = { showExtraChargesDialog = true }
                 )
 
-                // VEHICLE CATEGORY, TRIP MODE & TARIFF PREVIEW:
-                // Hidden completely during active trips so no base fare, per-km rate, CC rate,
-                // waiting rule, or package breakdown is exposed while the meter is running/paused.
+                // METER MODE SWITCHER & TARIFF CONTROLS (Hidden during active trips)
                 if (!isTripActive) {
-                    VehicleCategorySelectorCard(
-                        selectedCategory = selectedVehicle,
-                        isTripActive = false,
-                        onSelectCategory = { viewModel.selectVehicleCategory(it) }
-                    )
+                    // OTP Meter vs Direct Meter Independent Mode Switcher
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = colors.surface),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.dp, colors.border),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .testTag("meter_mode_switcher_card")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val isOtpTab = selectedMeterMode == SangamTariffConfig.METER_MODE_OTP
+                            Button(
+                                onClick = { viewModel.selectMeterMode(SangamTariffConfig.METER_MODE_OTP) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isOtpTab) colors.primaryAccent else colors.surfaceElevated,
+                                    contentColor = if (isOtpTab) colors.onPrimaryAccent else colors.textPrimary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("mode_tab_otp")
+                            ) {
+                                Text("OTP METER", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                            }
+                            Button(
+                                onClick = { viewModel.selectMeterMode(SangamTariffConfig.METER_MODE_DIRECT) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (!isOtpTab) colors.primaryAccent else colors.surfaceElevated,
+                                    contentColor = if (!isOtpTab) colors.onPrimaryAccent else colors.textPrimary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("mode_tab_direct")
+                            ) {
+                                Text("DIRECT METER", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                            }
+                        }
+                    }
 
-                    SangamTripTypeSelectorCard(
-                        selectedCategory = selectedVehicle,
-                        selectedTripType = selectedTripType,
-                        isInnovaCrysta = isInnovaCrysta,
-                        isTripActive = false,
-                        onSelectTripType = { viewModel.setSangamTripType(it) },
-                        onToggleInnovaCrysta = { viewModel.setInnovaCrysta(it) }
-                    )
+                    if (selectedMeterMode == SangamTariffConfig.METER_MODE_DIRECT) {
+                        DirectMeterSelectorCard(
+                            selectedCategory = selectedDirectCategory,
+                            onSelectCategory = { viewModel.selectDirectCategory(it) },
+                            onOpenDirectSettings = onNavigateToDirectMeterSettings
+                        )
+                    } else {
+                        VehicleCategorySelectorCard(
+                            selectedCategory = selectedVehicle,
+                            isTripActive = false,
+                            onSelectCategory = { viewModel.selectVehicleCategory(it) }
+                        )
 
-                    SangamModifiersAndRatePreviewCard(
-                        category = selectedVehicle,
-                        tripType = selectedTripType,
-                        isInnovaCrysta = isInnovaCrysta,
-                        isOutsideCity = isOutsideCity,
-                        isNightTrip = isNightTrip,
-                        packageHours = packageHours,
-                        over12Hours = over12Hours,
-                        onToggleOutsideCity = { viewModel.setOutsideCity(it) },
-                        onToggleNightTrip = { viewModel.setNightTrip(it) },
-                        onSelectPackageHours = { viewModel.setPackageHours(it) },
-                        onToggleOver12Hours = { viewModel.setOver12Hours(it) }
-                    )
+                        SangamTripTypeSelectorCard(
+                            selectedCategory = selectedVehicle,
+                            selectedTripType = selectedTripType,
+                            isInnovaCrysta = isInnovaCrysta,
+                            isTripActive = false,
+                            onSelectTripType = { viewModel.setSangamTripType(it) },
+                            onToggleInnovaCrysta = { viewModel.setInnovaCrysta(it) }
+                        )
+
+                        SangamModifiersAndRatePreviewCard(
+                            category = selectedVehicle,
+                            tripType = selectedTripType,
+                            isInnovaCrysta = isInnovaCrysta,
+                            isOutsideCity = isOutsideCity,
+                            isNightTrip = isNightTrip,
+                            packageHours = packageHours,
+                            use100KmPackage = use100KmPackage,
+                            over12Hours = over12Hours,
+                            onToggleOutsideCity = { viewModel.setOutsideCity(it) },
+                            onToggleNightTrip = { viewModel.setNightTrip(it) },
+                            onSelectPackageHours = { viewModel.setPackageHours(it) },
+                            onToggle100KmPackage = { viewModel.setUse100KmPackage(it) },
+                            onToggleOver12Hours = { viewModel.setOver12Hours(it) }
+                        )
+                    }
                 } else {
-                    val activeCat = SangamTariffConfig.VehicleCategory.fromId(tripState.vehicleCategoryId)
-                    val activeMode = SangamTripType.fromId(tripState.sangamTripTypeId)
-                    val activeCatLabel = if (tripState.isInnovaCrysta) "INNOVA CRYSTA" else activeCat.displayName
+                    val isDirectActive = tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT
+                    val activeModeTitle = if (isDirectActive) {
+                        val dCat = SangamTariffConfig.DirectMeterCategory.fromId(tripState.directCategoryId)
+                        "DIRECT METER • ${dCat.displayName}"
+                    } else {
+                        val activeCat = SangamTariffConfig.VehicleCategory.fromId(tripState.vehicleCategoryId)
+                        val activeMode = SangamTripType.fromId(tripState.sangamTripTypeId)
+                        val activeCatLabel = if (tripState.isInnovaCrysta) "INNOVA CRYSTA" else activeCat.displayName
+                        "$activeCatLabel • ${activeMode.displayName}"
+                    }
                     Surface(
-                        color = HudCard,
+                        color = colors.surface,
                         shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, HudBorder),
+                        border = BorderStroke(1.dp, colors.border),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
@@ -546,20 +675,20 @@ fun HomeMeterScreen(
                                 Icon(
                                     imageVector = Icons.Default.LocalTaxi,
                                     contentDescription = null,
-                                    tint = HudYellow,
+                                    tint = colors.primaryAccent,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "$activeCatLabel • ${activeMode.displayName}",
-                                    color = HudWhite,
+                                    text = activeModeTitle,
+                                    color = colors.textPrimary,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Black
                                 )
                             }
                             Text(
-                                text = "TRIP ACTIVE",
-                                color = HudYellow,
+                                text = if (isDirectActive) "NO CC" else "TRIP ACTIVE",
+                                color = colors.yellowText,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Black
                             )
@@ -569,9 +698,11 @@ fun HomeMeterScreen(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // PRIMARY START / START WITH OTP / PAUSE / END METER ACTIONS
+                // PRIMARY START / DIRECT START / START WITH OTP / PAUSE / END METER ACTIONS
                 MeterActionControls(
                     status = tripState.status,
+                    isDirectMode = selectedMeterMode == SangamTariffConfig.METER_MODE_DIRECT,
+                    onStartDirectTrip = { viewModel.startDirectMeterTrip(selectedDirectCategory) },
                     onStartTrip = { viewModel.startTrip() },
                     onOpenStartWithOtp = {
                         otpInput = ""
@@ -628,6 +759,50 @@ fun HomeMeterScreen(
         )
     }
 
+    if (showGapAdjustDialog) {
+        var gapKmInput by remember {
+            mutableStateOf(String.format(Locale.US, "%.2f", tripState.unverifiedGapStraightLineKm))
+        }
+        AlertDialog(
+            onDismissRequest = { showGapAdjustDialog = false },
+            title = { Text("Verify Interrupted GPS Distance", fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter verified road distance (KM) to add for the ${tripState.unverifiedGapSeconds}s GPS interruption gap. Recorded GPS distance (${String.format(Locale.US, "%.2f", tripState.distanceKm)} km) will be preserved.",
+                        fontSize = 12.sp
+                    )
+                    OutlinedTextField(
+                        value = gapKmInput,
+                        onValueChange = { gapKmInput = it },
+                        label = { Text("Additional Verified KM") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val addKm = gapKmInput.trim().toDoubleOrNull() ?: 0.0
+                    if (addKm > 0.0) {
+                        viewModel.applyVerifiedGapAdjustment(addKm)
+                    } else {
+                        viewModel.dismissGapWarning()
+                    }
+                    showGapAdjustDialog = false
+                }) {
+                    Text("Apply Verified KM")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGapAdjustDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     if (showQuickCalculatorDialog) {
         QuickFareCalculatorDialog(
             initialCategory = selectedVehicle,
@@ -636,6 +811,7 @@ fun HomeMeterScreen(
             initialOutsideCity = isOutsideCity,
             initialNightTrip = isNightTrip,
             initialPackageHours = packageHours,
+            initialUse100KmPackage = use100KmPackage,
             initialOver12Hours = over12Hours,
             onDismiss = { showQuickCalculatorDialog = false },
             onCalculateAndSettle = { input, pickup, drop, durMin ->
@@ -670,7 +846,7 @@ fun HomeMeterScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(HudBlack)
+                    .background(colors.background)
                     .statusBarsPadding()
             ) {
                 TripMapView(
@@ -696,15 +872,110 @@ fun HomeMeterScreen(
 }
 
 @Composable
+private fun DirectMeterSelectorCard(
+    selectedCategory: SangamTariffConfig.DirectMeterCategory,
+    onSelectCategory: (SangamTariffConfig.DirectMeterCategory) -> Unit,
+    onOpenDirectSettings: () -> Unit
+) {
+    val colors = LocalGetTaxiColors.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, colors.border),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .testTag("direct_meter_selector_card")
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "DIRECT METER MODE (NO OTP • NO CC)",
+                        color = colors.primaryAccent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.8.sp
+                    )
+                    Text(
+                        text = "Customer Invoice only • Separate from OTP Meter",
+                        color = colors.textSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+                TextButton(
+                    onClick = onOpenDirectSettings,
+                    modifier = Modifier.testTag("open_direct_settings_button")
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = "Direct Settings", modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Rates", fontWeight = FontWeight.Black, fontSize = 12.sp)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SangamTariffConfig.DirectMeterCategory.entries.forEach { cat ->
+                    val selected = cat == selectedCategory
+                    Surface(
+                        color = if (selected) colors.primaryAccent else colors.surfaceElevated,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, if (selected) colors.primaryAccent else colors.border),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelectCategory(cat) }
+                            .testTag("direct_cat_${cat.id.lowercase(Locale.US)}")
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp)) {
+                            Text(
+                                text = cat.displayName,
+                                color = if (selected) colors.onPrimaryAccent else colors.textPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            val preview = when (selectedCategory) {
+                SangamTariffConfig.DirectMeterCategory.LOCAL ->
+                    "Default Local: ₹100 Base + ₹30/km • Wait ₹2/min (editable in Direct Meter Settings)"
+                SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL ->
+                    "Default Hourly: ₹375/hr • 10 KM Included • ₹20/extra km (editable in Direct Meter Settings)"
+                SangamTariffConfig.DirectMeterCategory.OUTSTATION ->
+                    "Default Outstation: ₹300 Base + ₹30/km • Wait ₹2/min (editable in Direct Meter Settings)"
+            }
+            Text(
+                text = preview,
+                color = colors.textSecondary,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+        }
+    }
+}
+
+@Composable
 private fun CommercialMeterGaugeCard(
     tripState: com.example.data.model.TripState,
     activeTripType: SangamTripType,
     onOpenExtras: () -> Unit
 ) {
+    val colors = LocalGetTaxiColors.current
     Card(
-        colors = CardDefaults.cardColors(containerColor = HudBlack),
+        colors = CardDefaults.cardColors(containerColor = colors.meterDisplayBg),
         shape = RoundedCornerShape(26.dp),
-        border = BorderStroke(1.5.dp, if (tripState.hasUnresolvedBoundaryFlag) HudAmber else HudYellow),
+        border = BorderStroke(1.5.dp, if (tripState.hasUnresolvedBoundaryFlag) HudAmber else colors.primaryAccent),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
@@ -718,8 +989,8 @@ private fun CommercialMeterGaugeCard(
                     .padding(18.dp)
             ) {
                 Text(
-                    text = "LIVE METER FARE",
-                    color = HudMuted,
+                    text = if (tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT) "DIRECT METER FARE" else "LIVE METER FARE",
+                    color = colors.textSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 1.6.sp
@@ -728,7 +999,7 @@ private fun CommercialMeterGaugeCard(
                 Row(verticalAlignment = Alignment.Top) {
                     Text(
                         text = tripState.currency,
-                        color = HudYellow,
+                        color = colors.primaryAccent,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.padding(top = 8.dp)
@@ -736,35 +1007,18 @@ private fun CommercialMeterGaugeCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = String.format(Locale.US, "%.2f", tripState.currentFare),
-                        color = HudYellow,
+                        color = colors.primaryAccent,
                         fontSize = 54.sp,
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.testTag("fare_text")
                     )
                 }
 
-                if (tripState.hasUnresolvedBoundaryFlag) {
-                    Surface(
-                        color = Color(0xFF451A03),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, HudAmber),
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Text(
-                            text = "5 KM Boundary Overlap — Verify on Settlement",
-                            color = HudAmber,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-
                 if (tripState.extraChargeItems.isNotEmpty()) {
                     Surface(
-                        color = HudCard,
+                        color = colors.surfaceElevated,
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, HudBorder),
+                        border = BorderStroke(1.dp, colors.border),
                         modifier = Modifier
                             .padding(top = 6.dp)
                             .clickable { onOpenExtras() }
@@ -772,7 +1026,7 @@ private fun CommercialMeterGaugeCard(
                     ) {
                         Text(
                             text = "Extras +${tripState.currency}${String.format(Locale.US, "%.0f", tripState.liveExtraChargesTotal)}",
-                            color = HudYellow,
+                            color = colors.yellowText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -791,14 +1045,23 @@ private fun CommercialMeterGaugeCard(
                         value = "${String.format(Locale.US, "%.2f", tripState.distanceKm)} km",
                         modifier = Modifier.weight(1f)
                     )
-                    val middleLabel = when (activeTripType) {
-                        SangamTripType.HOURLY_RENTAL -> "PACKAGE"
-                        SangamTripType.LOCAL_NORMAL, SangamTripType.LOCAL_MINIMUM_BILL -> "WAIT"
+                    val isDirect = tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT
+                    val isDirectHourly = isDirect && SangamTariffConfig.DirectMeterCategory.fromId(tripState.directCategoryId) == SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL
+                    val middleLabel = when {
+                        isDirectHourly -> "HOURS"
+                        isDirect -> "WAIT"
+                        activeTripType == SangamTripType.HOURLY_RENTAL -> if (tripState.use100KmPackage) "PKG" else "PACKAGE"
                         else -> "WAIT"
                     }
-                    val middleVal = when (activeTripType) {
-                        SangamTripType.HOURLY_RENTAL -> "${tripState.packageHours}h"
-                        SangamTripType.LOCAL_NORMAL, SangamTripType.LOCAL_MINIMUM_BILL -> {
+                    val middleVal = when {
+                        isDirectHourly -> "${tripState.billableHours}h"
+                        isDirect -> {
+                            val wMin = tripState.waitingSeconds / 60
+                            val wSec = tripState.waitingSeconds % 60
+                            String.format(Locale.US, "%dm %02ds", wMin, wSec)
+                        }
+                        activeTripType == SangamTripType.HOURLY_RENTAL -> if (tripState.use100KmPackage) "100km" else "${tripState.packageHours}h"
+                        activeTripType == SangamTripType.LOCAL_NORMAL || activeTripType == SangamTripType.LOCAL_MINIMUM_BILL -> {
                             val wMin = tripState.waitingSeconds / 60
                             val wSec = tripState.waitingSeconds % 60
                             String.format(Locale.US, "%dm %02ds", wMin, wSec)
@@ -837,14 +1100,14 @@ private fun CommercialMeterGaugeCard(
                     .padding(10.dp)
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(HudCard)
-                    .border(1.dp, HudBorder, CircleShape)
+                    .background(colors.surfaceElevated)
+                    .border(1.dp, colors.border, CircleShape)
                     .testTag("active_meter_extra_charges_menu_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.AddRoad,
                     contentDescription = "Extra Charges",
-                    tint = HudYellow
+                    tint = colors.primaryAccent
                 )
             }
         }
@@ -853,22 +1116,25 @@ private fun CommercialMeterGaugeCard(
 
 @Composable
 private fun MetricTile(label: String, value: String, modifier: Modifier = Modifier) {
+    val colors = LocalGetTaxiColors.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
-            .background(HudCard, RoundedCornerShape(14.dp))
-            .border(1.dp, HudBorder, RoundedCornerShape(14.dp))
+            .background(colors.surfaceElevated, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.border, RoundedCornerShape(14.dp))
             .padding(vertical = 10.dp, horizontal = 6.dp)
     ) {
-        Text(text = label, color = HudMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text(text = label, color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(2.dp))
-        Text(text = value, color = HudWhite, fontSize = 16.sp, fontWeight = FontWeight.Black)
+        Text(text = value, color = colors.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Black)
     }
 }
 
 @Composable
 private fun MeterActionControls(
     status: TripStatus,
+    isDirectMode: Boolean,
+    onStartDirectTrip: () -> Unit,
     onStartTrip: () -> Unit,
     onOpenStartWithOtp: () -> Unit,
     onOpenParkedCalculator: () -> Unit,
@@ -876,52 +1142,69 @@ private fun MeterActionControls(
     onResumeTrip: () -> Unit,
     onEndTrip: () -> Unit
 ) {
+    val colors = LocalGetTaxiColors.current
     AnimatedContent(targetState = status, label = "MeterActionControls") { target ->
         when (target) {
             TripStatus.IDLE, TripStatus.FINISHED -> {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = onStartTrip,
-                        colors = ButtonDefaults.buttonColors(containerColor = HudYellow, contentColor = HudBlack),
-                        shape = RoundedCornerShape(18.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .testTag("start_trip_button")
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("START METER", fontSize = 16.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                    }
+                    if (isDirectMode) {
+                        Button(
+                            onClick = onStartDirectTrip,
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .testTag("direct_start_meter_button")
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("DIRECT START METER", fontSize = 16.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                        }
+                    } else {
+                        Button(
+                            onClick = onStartTrip,
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .testTag("start_trip_button")
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("START METER", fontSize = 16.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                        }
 
-                    OutlinedButton(
-                        onClick = onOpenStartWithOtp,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.5.dp, HudYellow),
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = HudBlack, contentColor = HudYellow),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("start_with_otp_button")
-                    ) {
-                        Icon(Icons.Default.Pin, contentDescription = null, tint = HudYellow, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("START WITH OTP", fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
-                    }
+                        OutlinedButton(
+                            onClick = onOpenStartWithOtp,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.5.dp, colors.primaryAccent),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = colors.surface, contentColor = colors.primaryAccent),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("start_with_otp_button")
+                        ) {
+                            Icon(Icons.Default.Pin, contentDescription = null, tint = colors.primaryAccent, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("START WITH OTP", fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
+                        }
 
-                    OutlinedButton(
-                        onClick = onOpenParkedCalculator,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, HudBorder),
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = HudBlack, contentColor = HudWhite),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("parked_calculator_button")
-                    ) {
-                        Icon(Icons.Default.Calculate, contentDescription = null, tint = HudYellow, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("CALCULATE BILL (PARKED)", fontSize = 13.sp, fontWeight = FontWeight.Black)
+                        OutlinedButton(
+                            onClick = onOpenParkedCalculator,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, colors.border),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = colors.surface, contentColor = colors.textPrimary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("parked_calculator_button")
+                        ) {
+                            Icon(Icons.Default.Calculate, contentDescription = null, tint = colors.primaryAccent, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("CALCULATE BILL (PARKED)", fontSize = 13.sp, fontWeight = FontWeight.Black)
+                        }
                     }
                 }
             }
@@ -931,20 +1214,20 @@ private fun MeterActionControls(
                     OutlinedButton(
                         onClick = onPauseTrip,
                         shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(1.5.dp, HudYellow),
+                        border = BorderStroke(1.5.dp, colors.primaryAccent),
                         modifier = Modifier
                             .weight(1f)
                             .height(56.dp)
                             .testTag("pause_trip_button")
                     ) {
-                        Icon(Icons.Default.Pause, contentDescription = null, tint = HudYellow)
+                        Icon(Icons.Default.Pause, contentDescription = null, tint = colors.primaryAccent)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("PAUSE", color = HudYellow, fontWeight = FontWeight.Black)
+                        Text("PAUSE", color = colors.primaryAccent, fontWeight = FontWeight.Black)
                     }
 
                     Button(
                         onClick = onEndTrip,
-                        colors = ButtonDefaults.buttonColors(containerColor = HudYellow, contentColor = HudBlack),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier
                             .weight(1.3f)
@@ -962,7 +1245,7 @@ private fun MeterActionControls(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = onResumeTrip,
-                        colors = ButtonDefaults.buttonColors(containerColor = HudGreen, contentColor = HudBlack),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.greenSuccess, contentColor = Color.White),
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier
                             .weight(1.1f)
@@ -976,7 +1259,7 @@ private fun MeterActionControls(
 
                     Button(
                         onClick = onEndTrip,
-                        colors = ButtonDefaults.buttonColors(containerColor = HudYellow, contentColor = HudBlack),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier
                             .weight(1.2f)
@@ -1001,18 +1284,23 @@ private fun ActiveExtraChargesDialog(
     onRemoveCharge: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var labelInput by remember { mutableStateOf("Toll") }
+    val colors = LocalGetTaxiColors.current
+    var labelInput by remember { mutableStateOf(SangamTariffConfig.EXTRA_LABEL_OUTSIDE_CITY) }
     var amountInput by remember { mutableStateOf("") }
     var isOutstationWaitMode by remember { mutableStateOf(false) }
     var waitHoursInput by remember { mutableStateOf("") }
     var waitRateInput by remember { mutableStateOf("") }
-    val presets = listOf("Toll", "Permit", "Parking", "Hill / Border", "Waiting Hrs")
+    val namedManualPresets = listOf(
+        SangamTariffConfig.EXTRA_LABEL_OUTSIDE_CITY,
+        SangamTariffConfig.EXTRA_LABEL_NIGHT_ALLOWANCE
+    )
+    val otherPresets = listOf("Toll", "Permit", "Parking")
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = HudCharcoal),
+            colors = CardDefaults.cardColors(containerColor = colors.surface),
             shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, HudYellow),
+            border = BorderStroke(1.dp, colors.primaryAccent),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("extra_charges_dialog")
@@ -1028,15 +1316,32 @@ private fun ActiveExtraChargesDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("EXTRA CHARGES", color = HudYellow, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                    Text("ADDITIONAL CHARGES", color = colors.primaryAccent, fontWeight = FontWeight.Black, fontSize = 15.sp)
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = HudMuted)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = colors.textSecondary)
                     }
                 }
 
+                Text(
+                    text = "Manual entry only — no automatic charge is added unless you enter an amount.",
+                    color = colors.textSecondary,
+                    fontSize = 11.sp
+                )
+
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    namedManualPresets.forEach { preset ->
+                        FilterChip(
+                            selected = !isOutstationWaitMode && labelInput == preset,
+                            onClick = {
+                                isOutstationWaitMode = false
+                                labelInput = preset
+                            },
+                            label = { Text(preset, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            modifier = Modifier.testTag("manual_extra_preset_${preset.take(8).lowercase(Locale.US)}")
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        presets.take(3).forEach { preset ->
+                        otherPresets.forEach { preset ->
                             FilterChip(
                                 selected = !isOutstationWaitMode && labelInput == preset,
                                 onClick = {
@@ -1047,34 +1352,18 @@ private fun ActiveExtraChargesDialog(
                             )
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        FilterChip(
-                            selected = !isOutstationWaitMode && labelInput == "Hill / Border",
-                            onClick = {
-                                isOutstationWaitMode = false
-                                labelInput = "Hill / Border"
-                            },
-                            label = { Text("Hill / Border", fontSize = 11.sp) }
-                        )
-                        FilterChip(
-                            selected = isOutstationWaitMode,
-                            onClick = {
-                                isOutstationWaitMode = true
-                                labelInput = "Additional Waiting Hours"
-                            },
-                            label = { Text("Outstation Waiting Hrs", fontSize = 11.sp) },
-                            modifier = Modifier.testTag("outstation_wait_preset_chip")
-                        )
-                    }
+                    FilterChip(
+                        selected = isOutstationWaitMode,
+                        onClick = {
+                            isOutstationWaitMode = true
+                            labelInput = "Additional Waiting Hours"
+                        },
+                        label = { Text("Outstation Waiting Hrs", fontSize = 11.sp) },
+                        modifier = Modifier.testTag("outstation_wait_preset_chip")
+                    )
                 }
 
                 if (isOutstationWaitMode) {
-                    Text(
-                        text = "Optional manual entry for approved outstation waiting hours. Enter hours and your approved hourly rate (or enter total amount directly below).",
-                        color = HudMuted,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
-                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = waitHoursInput,
@@ -1089,9 +1378,7 @@ private fun ActiveExtraChargesDialog(
                             label = { Text("Wait Hours") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             singleLine = true,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("outstation_wait_hours_input")
+                            modifier = Modifier.weight(1f).testTag("outstation_wait_hours_input")
                         )
                         OutlinedTextField(
                             value = waitRateInput,
@@ -1106,9 +1393,7 @@ private fun ActiveExtraChargesDialog(
                             label = { Text("Rate/Hr ($currency)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             singleLine = true,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("outstation_wait_rate_input")
+                            modifier = Modifier.weight(1f).testTag("outstation_wait_rate_input")
                         )
                     }
                 }
@@ -1122,9 +1407,9 @@ private fun ActiveExtraChargesDialog(
                 OutlinedTextField(
                     value = amountInput,
                     onValueChange = { amountInput = it },
-                    label = { Text("Amount ($currency)") },
+                    label = { Text("Manual Amount ($currency)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("extra_charge_amount_input")
                 )
 
                 Button(
@@ -1150,7 +1435,7 @@ private fun ActiveExtraChargesDialog(
                             waitRateInput = ""
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = HudYellow, contentColor = HudBlack),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
@@ -1160,7 +1445,7 @@ private fun ActiveExtraChargesDialog(
                 }
 
                 if (currentItems.isNotEmpty()) {
-                    HorizontalDivider(color = HudBorder)
+                    HorizontalDivider(color = colors.border)
                     currentItems.forEach { item ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1169,7 +1454,7 @@ private fun ActiveExtraChargesDialog(
                         ) {
                             Text(
                                 "${item.label}: $currency${String.format(Locale.US, "%.2f", item.amount)}",
-                                color = HudWhite,
+                                color = colors.textPrimary,
                                 fontSize = 12.sp,
                                 modifier = Modifier.weight(1f)
                             )
@@ -1192,11 +1477,12 @@ private fun StartWithOtpDialog(
     onDismiss: () -> Unit,
     onVerifyAndStart: () -> Unit
 ) {
+    val colors = LocalGetTaxiColors.current
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = HudCharcoal),
+            colors = CardDefaults.cardColors(containerColor = colors.surface),
             shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, HudYellow),
+            border = BorderStroke(1.dp, colors.primaryAccent),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("otp_start_dialog")
@@ -1212,18 +1498,18 @@ private fun StartWithOtpDialog(
                 ) {
                     Text(
                         text = "START WITH OTP",
-                        color = HudYellow,
+                        color = colors.primaryAccent,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Black
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = HudMuted)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = colors.textSecondary)
                     }
                 }
 
                 Text(
-                    text = "Enter your authorized 4-digit trip start PIN to start the meter.",
-                    color = HudMuted,
+                    text = "Enter your authorized 4-digit trip start PIN to start the OTP meter.",
+                    color = colors.textSecondary,
                     fontSize = 12.sp
                 )
 
@@ -1235,13 +1521,13 @@ private fun StartWithOtpDialog(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = HudYellow,
-                        unfocusedBorderColor = HudBorder,
-                        focusedLabelColor = HudYellow,
-                        unfocusedLabelColor = HudMuted,
-                        focusedTextColor = HudWhite,
-                        unfocusedTextColor = HudWhite,
-                        cursorColor = HudYellow
+                        focusedBorderColor = colors.primaryAccent,
+                        unfocusedBorderColor = colors.border,
+                        focusedLabelColor = colors.primaryAccent,
+                        unfocusedLabelColor = colors.textSecondary,
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary,
+                        cursorColor = colors.primaryAccent
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1251,7 +1537,7 @@ private fun StartWithOtpDialog(
                 if (errorMsg != null) {
                     Text(
                         text = errorMsg,
-                        color = Color(0xFFF87171),
+                        color = colors.redDanger,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.testTag("otp_error_text")
@@ -1260,7 +1546,7 @@ private fun StartWithOtpDialog(
 
                 Button(
                     onClick = onVerifyAndStart,
-                    colors = ButtonDefaults.buttonColors(containerColor = HudYellow, contentColor = HudBlack),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()

@@ -258,4 +258,48 @@ class GpsDistanceEngineTest {
         )
         assertEquals(0L, outstationWait.nextWaitingSeconds)
     }
+
+    @Test
+    fun `test restoreAnchorAndDistance prevents duplicate counting and flags post-background GPS gaps without fabricating distance`() {
+        val tAnchor = 2_000_000L
+        val recoveredEngine = GpsDistanceEngine()
+        recoveredEngine.restoreAnchorAndDistance(
+            distanceKm = 8.42,
+            lastLat = 11.016800,
+            lastLng = 76.955800,
+            lastTimeMs = tAnchor
+        )
+        assertEquals(8.42, recoveredEngine.accumulatedDistanceKm, 0.0001)
+        assertEquals(tAnchor, recoveredEngine.lastValidTimestamp)
+
+        // 1. Replaying the same or older timestamp after process restart must be ignored (zero duplicate counting)
+        val replayedLoc = createLocation(11.017000, 76.955800, tAnchor, accuracy = 5f, speedMps = 10f)
+        val replayRes = recoveredEngine.processLocation(replayedLoc, isTripRunning = true)
+        assertFalse("Duplicate timestamp replay must be rejected", replayRes.accepted)
+        assertEquals(8.42, recoveredEngine.accumulatedDistanceKm, 0.0001)
+
+        // 2. Arriving after a 75s interruption gap (e.g. phone call / backgrounded / tunnel) flags gap with straight-line estimate
+        //    and MUST NOT fabricate distance automatically
+        val afterGapLoc = createLocation(11.025800, 76.955800, tAnchor + 75_000L, accuracy = 6f, speedMps = 12f)
+        val gapRes = recoveredEngine.processLocation(afterGapLoc, isTripRunning = true)
+        assertTrue(gapRes.accepted)
+        assertTrue("Gap > 30s must be detected", gapRes.gapDetected)
+        assertEquals(75L, gapRes.gapDurationSeconds)
+        assertTrue("Straight-line gap reference should be computed (~1 km)", gapRes.gapStraightLineKm > 0.8)
+        assertEquals(0.0, gapRes.distanceIncrementM, 0.0001)
+        assertEquals(8.42, recoveredEngine.accumulatedDistanceKm, 0.0001)
+
+        // 3. Explicit driver-verified adjustment adds audited distance cleanly without resetting accumulated GPS km
+        val updatedTotal = recoveredEngine.applyAuditedManualDistanceAdjustment(1.05)
+        assertEquals(9.47, updatedTotal, 0.0001)
+        assertEquals(9.47, recoveredEngine.accumulatedDistanceKm, 0.0001)
+
+        // 4. Subsequent normal GPS fix continues accumulating smoothly on top of 9.47 km
+        val nextLoc = createLocation(11.026050, 76.955800, tAnchor + 77_000L, accuracy = 5f, speedMps = 12f)
+        val nextRes = recoveredEngine.processLocation(nextLoc, isTripRunning = true)
+        assertTrue(nextRes.accepted)
+        assertFalse(nextRes.gapDetected)
+        assertTrue("Live tracking continues smoothly after adjustment", recoveredEngine.accumulatedDistanceKm > 9.49)
+    }
 }
+

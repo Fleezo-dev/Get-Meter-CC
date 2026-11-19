@@ -203,6 +203,10 @@ object ShareUtils {
         breakdown: SangamTariffCalculator.SangamSettlementBreakdown,
         includeSettlementNote: Boolean = false
     ): String {
+        val isDirectMeter = breakdown.isDirectMeter ||
+            trip.meterMode.equals(SangamTariffConfig.METER_MODE_DIRECT, ignoreCase = true)
+        val directCatLabel = (breakdown.directCategory
+            ?: SangamTariffConfig.DirectMeterCategory.fromId(trip.directCategoryId)).displayName
         val catLabel = if (breakdown.isInnovaCrysta) "INNOVA CRYSTA" else breakdown.vehicleCategory.displayName
         val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US)
             .format(Date(trip.endTime.takeIf { it > 0L } ?: System.currentTimeMillis()))
@@ -211,8 +215,12 @@ object ShareUtils {
             append("*GET TAXI — OFFICIAL CUSTOMER INVOICE*\n")
             append("Bill No: ${trip.tripNumber}\n")
             append("Date & Time: $dateStr\n")
-            append("Vehicle Category: $catLabel\n")
-            append("Trip Type: ${breakdown.tripType.displayName}\n")
+            if (isDirectMeter) {
+                append("Meter Mode: Direct Meter ($directCatLabel)\n")
+            } else {
+                append("Vehicle Category: $catLabel\n")
+                append("Trip Type: ${breakdown.tripType.displayName}\n")
+            }
             if (trip.customerName.isNotBlank()) {
                 append("Customer: ${trip.customerName}")
                 if (trip.customerMobile.isNotBlank()) append(" (${trip.customerMobile})")
@@ -231,7 +239,8 @@ object ShareUtils {
             }
             append("\n*Final Payable: ${SangamTariffCalculator.formatRupees(breakdown.customerBillTotal)}*\n")
 
-            if (includeSettlementNote) {
+            // Strictly forbid CC / Vendor Settlement / GPay in Direct Meter mode
+            if (includeSettlementNote && !isDirectMeter) {
                 append("\n--- GET TAXI Internal Settlement ---\n")
                 when (val comm = breakdown.commissionResult) {
                     is SangamTariffCalculator.CommissionResult.Confirmed -> {

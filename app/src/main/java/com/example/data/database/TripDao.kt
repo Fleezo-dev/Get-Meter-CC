@@ -8,6 +8,15 @@ interface TripDao {
     @Query("SELECT * FROM trips ORDER BY endTime DESC, startTime DESC")
     fun getAllTrips(): Flow<List<TripEntity>>
 
+    @Query("SELECT * FROM trips WHERE meterMode = :meterMode ORDER BY endTime DESC, startTime DESC")
+    fun getTripsByMeterMode(meterMode: String): Flow<List<TripEntity>>
+
+    @Query("SELECT * FROM trips WHERE syncStatus = 'PENDING_SYNC' ORDER BY endTime DESC")
+    suspend fun getPendingSyncTrips(): List<TripEntity>
+
+    @Query("UPDATE trips SET syncStatus = :status WHERE id = :tripId")
+    suspend fun updateTripSyncStatus(tripId: Int, status: String)
+
     @Query("SELECT * FROM trips WHERE id = :id LIMIT 1")
     suspend fun getTripById(id: Int): TripEntity?
 

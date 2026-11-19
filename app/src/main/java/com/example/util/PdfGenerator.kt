@@ -665,12 +665,29 @@ object PdfGenerator {
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         canvas.drawText("GET TAXI — OFFICIAL METER BILL", brandTextX, currentY + 14f, paint)
 
+        val isDirectMeter = breakdown.isDirectMeter ||
+            trip.meterMode.equals(SangamTariffConfig.METER_MODE_DIRECT, ignoreCase = true)
+        val directCatLabel = (breakdown.directCategory
+            ?: SangamTariffConfig.DirectMeterCategory.fromId(trip.directCategoryId)).displayName
+        val catLabel = if (isDirectMeter) {
+            "DIRECT METER"
+        } else if (breakdown.isInnovaCrysta) {
+            "INNOVA CRYSTA"
+        } else {
+            breakdown.vehicleCategory.displayName
+        }
+        val modeSubtitle = if (isDirectMeter) directCatLabel else breakdown.tripType.displayName
+
         paint.color = Color.rgb(71, 85, 105)
         paint.textSize = 8.5f
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        canvas.drawText("Coimbatore • Official GET TAXI Tariff", brandTextX, currentY + 27f, paint)
-        val catLabel = if (breakdown.isInnovaCrysta) "INNOVA CRYSTA" else breakdown.vehicleCategory.displayName
-        canvas.drawText("$catLabel • ${breakdown.tripType.displayName}", brandTextX, currentY + 39f, paint)
+        canvas.drawText(
+            if (isDirectMeter) "GET TAXI – Smart Taxi Meter • Direct Meter Invoice" else "Coimbatore • Official GET TAXI Tariff",
+            brandTextX,
+            currentY + 27f,
+            paint
+        )
+        canvas.drawText("$catLabel • $modeSubtitle", brandTextX, currentY + 39f, paint)
 
         paint.textAlign = Paint.Align.RIGHT
         paint.color = Color.rgb(15, 23, 42)
@@ -719,7 +736,12 @@ object PdfGenerator {
         paint.textSize = 9f
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         canvas.drawText("Vehicle: ${trip.vehicleNumber.ifBlank { catLabel }}", driverX + 12f, currentY + 46f, paint)
-        canvas.drawText("Category: $catLabel", driverX + 12f, currentY + 60f, paint)
+        canvas.drawText(
+            if (isDirectMeter) "Mode: Direct Meter ($directCatLabel)" else "Category: $catLabel",
+            driverX + 12f,
+            currentY + 60f,
+            paint
+        )
 
         currentY += cardHeight + 14f
 
@@ -792,7 +814,12 @@ object PdfGenerator {
         paint.color = Color.rgb(203, 213, 225)
         paint.textSize = 8f
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        canvas.drawText("GET TAXI Tariff Applied", totalBoxX + 14f, currentY + 37f, paint)
+        canvas.drawText(
+            if (isDirectMeter) "GET TAXI Direct Meter Tariff Applied" else "GET TAXI Tariff Applied",
+            totalBoxX + 14f,
+            currentY + 37f,
+            paint
+        )
 
         paint.textAlign = Paint.Align.RIGHT
         paint.color = Color.rgb(255, 193, 7)

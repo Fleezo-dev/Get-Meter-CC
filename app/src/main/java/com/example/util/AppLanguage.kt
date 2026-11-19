@@ -43,7 +43,7 @@ open class AppStrings(val language: AppLanguage = AppLanguage.ENGLISH) {
     open val aboutUs: String = "About Us"
 
     // Splash Screen
-    open val splashSubtitle: String = "Professional Commercial Fare Meter"
+    open val splashSubtitle: String = "GET TAXI – Smart Taxi Meter"
 
     // Home / Main Dashboard
     open val deviceStatus: String = "DEVICE STATUS"
@@ -245,13 +245,13 @@ open class AppStrings(val language: AppLanguage = AppLanguage.ENGLISH) {
     open val changePaymentQrGalleryButton: String = "Change Payment QR Code from Gallery"
     open val removeUploadedQrButton: String = "Remove Uploaded QR Image"
     open val driverUpiOptionalLabel: String = "Driver Payment UPI ID (Optional Fallback)"
-    open val permissionsOnboardingHeader: String = "Permissions Onboarding"
-    open val permissionsOnboardingTitle: String = "4-Step Setup for Uninterrupted Tracking & Bubble"
+    open val permissionsOnboardingHeader: String = "Permissions Setup"
+    open val permissionsOnboardingTitle: String = "GPS & Background Tracking Setup (Overlay Optional)"
     open val startWizardButton: String = "Start Wizard"
     open val permStep1Title: String = "Location Permission (Allow All the Time)"
     open val permStep1Subtitle: String = "Required for background GPS distance & speed calculation"
     open val permStep2Title: String = "Overlay Permission (Display Over Other Apps)"
-    open val permStep2Subtitle: String = "Required for floating speedometer bubble on home screen"
+    open val permStep2Subtitle: String = "Optional — only needed if you enable the floating speedometer bubble"
     open val permStep3Title: String = "Ignore Battery Optimizations"
     open val permStep3Subtitle: String = "Prevents Android OS from killing the meter during long trips"
     open val permStep4Title: String = "Notification Permission"
@@ -353,7 +353,7 @@ open class AppStrings(val language: AppLanguage = AppLanguage.ENGLISH) {
     open val saveBillButton: String = "Save"
     open val billUpdatedToast: String = "Bill & Invoice details updated!"
     open val driverUpiDialogTitle: String = "Driver Payment UPI ID"
-    open val driverUpiDialogDesc: String = "Enter your UPI ID (GPay / PhonePe / Paytm) to generate an offline scan-and-pay QR code."
+    open val driverUpiDialogDesc: String = "Enter your UPI ID (GPay / PhonePe / Paytm) to generate a scan-and-pay QR code."
     open val yourUpiIdLabel: String = "Your UPI ID"
     open val saveUpiIdButton: String = "Save"
     open val upiSavedToast: String = "Driver UPI ID saved!"

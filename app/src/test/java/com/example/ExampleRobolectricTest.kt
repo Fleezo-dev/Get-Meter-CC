@@ -270,24 +270,24 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `verify Map-First display mode on trip start and Meter Details toggle without resetting trip`() {
+    fun `verify Active Meter Dashboard display mode on trip start and Map toggle without resetting trip`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
         val viewModel = MeterViewModel(app)
 
-        // Initially MAP_FIRST
-        assertEquals(ActiveTripDisplayMode.MAP_FIRST, viewModel.activeTripDisplayMode.value)
-
-        // Switch to Meter Details and back to Map
-        viewModel.showMeterDetails()
+        // Initially METER_DETAILS (dark-charcoal Active Meter Dashboard)
         assertEquals(ActiveTripDisplayMode.METER_DETAILS, viewModel.activeTripDisplayMode.value)
 
+        // Switch to Map and back to Meter Details
         viewModel.showMapDisplay()
         assertEquals(ActiveTripDisplayMode.MAP_FIRST, viewModel.activeTripDisplayMode.value)
 
-        // Starting a trip automatically opens MAP_FIRST even if previously on METER_DETAILS
         viewModel.showMeterDetails()
+        assertEquals(ActiveTripDisplayMode.METER_DETAILS, viewModel.activeTripDisplayMode.value)
+
+        // Starting a trip automatically opens Active Meter Dashboard (METER_DETAILS)
+        viewModel.showMapDisplay()
         viewModel.startTrip()
-        assertEquals(ActiveTripDisplayMode.MAP_FIRST, viewModel.activeTripDisplayMode.value)
+        assertEquals(ActiveTripDisplayMode.METER_DETAILS, viewModel.activeTripDisplayMode.value)
     }
 
     @Test
@@ -374,7 +374,7 @@ class ExampleRobolectricTest {
                 vehicleCategory = com.example.util.SangamTariffConfig.VehicleCategory.MINI,
                 tripType = com.example.util.SangamTariffConfig.SangamTripType.LOCAL_NORMAL,
                 distanceKm = 4.0,
-                isOutsideCity = true
+                outsideCityCharge = 80.0
             ),
             pickupAddress = "RS Puram",
             dropAddress = "Gandhipuram",
@@ -397,7 +397,7 @@ class ExampleRobolectricTest {
         assertEquals(null, settlement.saveError)
         assertEquals("GET TAXI", settlement.tripEntity.vendorName)
         assertEquals("", settlement.tripEntity.vendorContactNumber)
-        // MINI Local Normal 4km = 80 + 112 + 80 (outside city) = 272.00; CC = 30.00; Driver Net = 242.00
+        // MINI Local Normal 4km = 80 + 112 + 80 (manual Outside City Limits) = 272.00; Automatic CC (0-5km) = 25.00; Driver Net = 247.00
         assertEquals(272.0, settlement.breakdown.customerBillTotal.toDouble(), 0.01)
 
         // 1. Customer Invoice text & PDF MUST NEVER contain CC, Commission, Driver Balance, or 9043743777
@@ -406,6 +406,7 @@ class ExampleRobolectricTest {
         val customerText = ShareUtils.buildSangamReceiptText(settlement.tripEntity, settlement.breakdown, includeSettlementNote = false)
         assertTrue(customerText.contains("GET TAXI"))
         assertTrue(customerText.contains("₹272.00"))
+        assertTrue(customerText.contains("Outside City Limits"))
         assertFalse("Customer text must NOT contain GPay 9043743777", customerText.contains("9043743777"))
         assertFalse("Customer text must NOT contain CC", customerText.contains("CC"))
         assertFalse("Customer text must NOT contain Commission", customerText.contains("Commission", ignoreCase = true))
@@ -417,8 +418,8 @@ class ExampleRobolectricTest {
         assertTrue("Vendor Report PDF must exist", vendorPdf.exists() && vendorPdf.length() > 0L)
         val vendorText = ShareUtils.buildInternalCcReportText(settlement.tripEntity, settlement.breakdown, "DRV-01")
         assertTrue(vendorText.contains("₹272.00"))
-        assertTrue(vendorText.contains("₹30.00"))
-        assertTrue(vendorText.contains("₹242.00"))
+        assertTrue(vendorText.contains("₹25.00"))
+        assertTrue(vendorText.contains("₹247.00"))
         assertTrue(vendorText.contains("9043743777"))
         assertFalse("Vendor report must NOT contain Sangam", vendorText.contains("Sangam", ignoreCase = true))
 
@@ -439,8 +440,8 @@ class ExampleRobolectricTest {
         val recoveredTrip = db.tripDao().getTripById(persistedId)
         assertNotNull("Saved trip must survive End Trip & Clear and restart", recoveredTrip)
         assertEquals(272.0, recoveredTrip!!.totalFare, 0.01)
-        assertEquals(30.0, recoveredTrip.ccAmount, 0.01)
-        assertEquals(242.0, recoveredTrip.driverNetBalance, 0.01)
+        assertEquals(25.0, recoveredTrip.ccAmount, 0.01)
+        assertEquals(247.0, recoveredTrip.driverNetBalance, 0.01)
 
         // 5. Deduplication: saving same tripNumber again returns same ID without inserting a duplicate
         val duplicateSaveId = db.tripDao().saveCompletedTripIdempotent(recoveredTrip.copy(id = 0))
@@ -495,12 +496,12 @@ class ExampleRobolectricTest {
         assertTrue(ready)
 
         val settlement = viewModel.currentSettlement.value!!
-        // 80 + 112 + 20 (10 min * ₹2) = 212.00; CC = 30.00; Driver Net = 182.00
+        // 80 + 112 + 20 (10 min * ₹2) = 212.00; Automatic CC (0-5 km) = 25.00; Driver Net = 187.00
         assertEquals(212.0, settlement.breakdown.customerBillTotal.toDouble(), 0.01)
         assertEquals(2.0, settlement.tripEntity.waitFarePerMin, 0.01)
         assertEquals(600L, settlement.tripEntity.waitingSeconds)
-        assertEquals(30.0, settlement.tripEntity.ccAmount, 0.01)
-        assertEquals(182.0, settlement.tripEntity.driverNetBalance, 0.01)
+        assertEquals(25.0, settlement.tripEntity.ccAmount, 0.01)
+        assertEquals(187.0, settlement.tripEntity.driverNetBalance, 0.01)
 
         val customerText = ShareUtils.buildSangamReceiptText(settlement.tripEntity, settlement.breakdown, includeSettlementNote = false)
         assertTrue("Customer receipt must include Waiting Charge line item", customerText.contains("Waiting Charge"))
@@ -514,8 +515,8 @@ class ExampleRobolectricTest {
 
         val vendorText = ShareUtils.buildInternalCcReportText(settlement.tripEntity, settlement.breakdown, "DRV-02")
         assertTrue(vendorText.contains("₹212.00"))
-        assertTrue(vendorText.contains("₹30.00"))
-        assertTrue(vendorText.contains("₹182.00"))
+        assertTrue(vendorText.contains("₹25.00"))
+        assertTrue(vendorText.contains("₹187.00"))
         assertTrue(vendorText.contains("9043743777"))
 
         viewModel.endTripAndClearSettlement()
@@ -639,10 +640,16 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `verify ActiveTripRecord v12 preserves waitingSeconds, tariff mode, vehicle category, and modifiers`() = kotlinx.coroutines.runBlocking {
+    fun `verify ActiveTripRecord v13 preserves waitingSeconds, GPS anchor, gap metadata, Direct Meter snapshot, and manual extras`() = kotlinx.coroutines.runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = TripDatabase.getDatabase(context)
         val dao = db.tripDao()
+
+        val directSnapJson = com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot(
+            localBaseFare = 120.0,
+            localPerKmRate = 32.0,
+            waitingChargePerMin = 2.5
+        ).toJson()
 
         val activeRecord = com.example.data.database.ActiveTripRecord(
             tripNumber = "GTM-20261118-REC01",
@@ -650,7 +657,7 @@ class ExampleRobolectricTest {
             distanceKm = 6.2,
             durationSeconds = 900L,
             waitingSeconds = 300L,
-            currentFare = 580.0,
+            currentFare = 460.0,
             isPaused = true,
             baseFare = 200.0,
             farePerKm = 35.0,
@@ -664,7 +671,18 @@ class ExampleRobolectricTest {
             isInnovaCrysta = false,
             isNightTrip = true,
             over12Hours = false,
-            packageHours = 2
+            packageHours = 3,
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_OTP,
+            directCategoryId = com.example.util.SangamTariffConfig.DirectMeterCategory.LOCAL.id,
+            directTariffSnapshotJson = directSnapJson,
+            use100KmPackage = true,
+            lastAcceptedLat = 11.0168,
+            lastAcceptedLng = 76.9558,
+            lastAcceptedLocationTimeMs = 1700000890000L,
+            isWaitingActive = true,
+            unverifiedGapSeconds = 65L,
+            unverifiedGapStraightLineKm = 0.85,
+            needsDistanceVerification = true
         )
         dao.saveActiveTrip(activeRecord)
 
@@ -673,11 +691,17 @@ class ExampleRobolectricTest {
         assertEquals(300L, restored!!.waitingSeconds)
         assertEquals("SUV", restored.vehicleCategoryId)
         assertEquals("LOCAL_MINIMUM_BILL", restored.sangamTripTypeId)
-        assertTrue(restored.isOutOfCity)
-        assertTrue(restored.isNightTrip)
-        assertEquals(2, restored.packageHours)
+        assertTrue(restored.use100KmPackage)
+        assertEquals(11.0168, restored.lastAcceptedLat, 0.0001)
+        assertEquals(76.9558, restored.lastAcceptedLng, 0.0001)
+        assertEquals(1700000890000L, restored.lastAcceptedLocationTimeMs)
+        assertTrue(restored.isWaitingActive)
+        assertEquals(65L, restored.unverifiedGapSeconds)
+        assertEquals(0.85, restored.unverifiedGapStraightLineKm, 0.001)
+        assertTrue(restored.needsDistanceVerification)
 
-        // Verify live buildSangamInput computes waitingMinutes = 5.0 -> ₹10 waiting on SUV Min Bill (₹450 + ₹80 + ₹50 + ₹10 = ₹590)
+        // Verify buildSangamInput adds ZERO automatic Outside City/Night charges when no manual amount is entered
+        // SUV Min Bill 6.2km = ₹450 + 5.0 min wait (₹10) = ₹460.00
         val state = com.example.data.model.TripState(
             status = TripStatus.PAUSED,
             distanceKm = restored.distanceKm,
@@ -691,8 +715,124 @@ class ExampleRobolectricTest {
         val calcInput = LocationTrackingService.buildSangamInput(state)
         assertEquals(5.0, calcInput.waitingMinutes, 0.001)
         val breakdown = com.example.util.SangamTariffCalculator.calculateTripFareAndSettlement(calcInput)
-        assertEquals(java.math.BigDecimal("590.00"), breakdown.customerBillTotal)
+        assertEquals(java.math.BigDecimal("460.00"), breakdown.customerBillTotal)
 
         dao.clearActiveTrip()
     }
+
+    @Test
+    fun `verify Direct Meter Room persistence, filter separation, and Customer-Invoice-Only isolation`() = kotlinx.coroutines.runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = TripDatabase.getDatabase(context)
+        val dao = db.tripDao()
+
+        val snapshot = com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot()
+        val breakdown = com.example.util.SangamTariffCalculator.calculateDirectMeterFare(
+            directCategory = com.example.util.SangamTariffConfig.DirectMeterCategory.LOCAL,
+            distanceKm = 6.0,
+            waitingMinutes = 5.0,
+            tariffSnapshot = snapshot,
+            outsideCityCharge = 40.0
+        )
+        // 100 + 6*30 + 5*2 + 40 = 330.00
+        assertEquals(java.math.BigDecimal("330.00"), breakdown.customerBillTotal)
+
+        val directInput = com.example.util.SangamTariffCalculator.TripCalculationInput(
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_DIRECT,
+            directCategory = com.example.util.SangamTariffConfig.DirectMeterCategory.LOCAL,
+            distanceKm = 6.0,
+            waitingMinutes = 5.0,
+            directTariffSnapshot = snapshot,
+            outsideCityCharge = 40.0
+        )
+        val directTrip = com.example.util.TripSnapshotMapper.attachFinancialSnapshot(
+            baseEntity = TripEntity(
+                tripNumber = "GTM-DIRECT-TEST-001",
+                startTime = 1700010000000L,
+                endTime = 1700011200000L,
+                distanceKm = 6.0,
+                durationSeconds = 1200L,
+                waitingSeconds = 300L,
+                totalFare = 330.0,
+                startLatitude = 11.0168,
+                startLongitude = 76.9558,
+                endLatitude = 11.0400,
+                endLongitude = 76.9800,
+                meterMode = com.example.util.SangamTariffConfig.METER_MODE_DIRECT,
+                directCategoryId = com.example.util.SangamTariffConfig.DirectMeterCategory.LOCAL.id,
+                directTariffSnapshotJson = snapshot.toJson()
+            ),
+            input = directInput,
+            breakdown = breakdown
+        )
+        val insertedId = dao.saveCompletedTripIdempotent(directTrip).toInt()
+        assertTrue(insertedId > 0)
+
+        val directList = dao.getTripsByMeterMode(com.example.util.SangamTariffConfig.METER_MODE_DIRECT).first()
+        assertTrue(directList.any { it.tripNumber == "GTM-DIRECT-TEST-001" })
+
+        val savedDirect = dao.getTripById(insertedId)!!
+        assertEquals(com.example.util.SangamTariffConfig.METER_MODE_DIRECT, savedDirect.meterMode)
+        val restoredBreakdown = com.example.util.TripSnapshotMapper.toBreakdown(savedDirect)
+        assertTrue(restoredBreakdown.isDirectMeter)
+        assertEquals(java.math.BigDecimal("330.00"), restoredBreakdown.customerBillTotal)
+
+        // Even if includeSettlementNote = true is accidentally passed, Direct Meter MUST NEVER include CC or GPay 9043743777
+        val directReceiptText = ShareUtils.buildSangamReceiptText(savedDirect, restoredBreakdown, includeSettlementNote = true)
+        assertTrue(directReceiptText.contains("Direct Meter", ignoreCase = true))
+        assertTrue(directReceiptText.contains("₹330.00"))
+        assertFalse("Direct Meter receipt must NEVER include GPay 9043743777", directReceiptText.contains("9043743777"))
+        assertFalse("Direct Meter receipt must NEVER include CC", directReceiptText.contains("CC"))
+        assertFalse("Direct Meter receipt must NEVER include Commission", directReceiptText.contains("Commission", ignoreCase = true))
+
+        val directPdf = PdfGenerator.generateSangamBillPdf(context, savedDirect, restoredBreakdown)
+        assertTrue("Direct Meter Customer Invoice PDF must be generated", directPdf.exists() && directPdf.length() > 0L)
+    }
+
+    @Test
+    fun `verify SettingsRepository floating bubble defaults OFF, appearance mode and Direct Meter settings persist`() = kotlinx.coroutines.runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = com.example.data.preferences.SettingsRepository(context)
+
+        // Floating bubble MUST be optional (false by default)
+        assertFalse(com.example.data.preferences.SettingsRepository.DEFAULT_FLOATING_BUBBLE_ENABLED)
+        assertFalse(repo.floatingBubbleEnabled.first())
+
+        // Appearance mode round-trip
+        repo.updateAppearanceMode(com.example.data.preferences.SettingsRepository.APPEARANCE_DAY)
+        assertEquals(com.example.data.preferences.SettingsRepository.APPEARANCE_DAY, repo.appearanceMode.first())
+        repo.updateAppearanceMode(com.example.data.preferences.SettingsRepository.APPEARANCE_NIGHT)
+        assertEquals(com.example.data.preferences.SettingsRepository.APPEARANCE_NIGHT, repo.appearanceMode.first())
+        repo.updateAppearanceMode(com.example.data.preferences.SettingsRepository.APPEARANCE_AUTO)
+        assertEquals(com.example.data.preferences.SettingsRepository.APPEARANCE_AUTO, repo.appearanceMode.first())
+
+        // Direct Meter settings round-trip + reset to exact defaults
+        val customDirect = com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot(
+            localBaseFare = 125.0,
+            localPerKmRate = 34.0,
+            hourlyBaseFare = 400.0,
+            hourlyIncludedKm = 12.0,
+            hourlyExtraKmRate = 22.0,
+            outstationBaseFare = 350.0,
+            outstationPerKmRate = 32.0,
+            waitingChargePerMin = 3.0
+        )
+        repo.saveDirectMeterSettings(customDirect)
+        val readBack = repo.directMeterTariffSnapshot.first()
+        assertEquals(125.0, readBack.localBaseFare, 0.001)
+        assertEquals(400.0, readBack.hourlyBaseFare, 0.001)
+        assertEquals(3.0, readBack.waitingChargePerMin, 0.001)
+
+        repo.resetDirectMeterDefaults()
+        val resetBack = repo.directMeterTariffSnapshot.first()
+        assertEquals(100.0, resetBack.localBaseFare, 0.001)
+        assertEquals(30.0, resetBack.localPerKmRate, 0.001)
+        assertEquals(375.0, resetBack.hourlyBaseFare, 0.001)
+        assertEquals(10.0, resetBack.hourlyIncludedKm, 0.001)
+        assertEquals(20.0, resetBack.hourlyExtraKmRate, 0.001)
+        assertEquals(300.0, resetBack.outstationBaseFare, 0.001)
+        assertEquals(30.0, resetBack.outstationPerKmRate, 0.001)
+        assertEquals(2.0, resetBack.waitingChargePerMin, 0.001)
+    }
 }
+

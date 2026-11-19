@@ -49,7 +49,9 @@ class GpsDistanceEngine(
         val isMoving: Boolean,
         val accepted: Boolean,
         val rejectionReason: String? = null,
-        val gapDetected: Boolean = false
+        val gapDetected: Boolean = false,
+        val gapDurationSeconds: Long = 0L,
+        val gapStraightLineKm: Double = 0.0
     )
 
     fun reset(newDistanceKm: Double = 0.0) {
@@ -61,6 +63,48 @@ class GpsDistanceEngine(
 
     fun restoreDistance(distanceKm: Double) {
         accumulatedDistanceKm = distanceKm
+    }
+
+    /**
+     * Losslessly restores both accumulated distance AND the last accepted GPS fix anchor
+     * after app backgrounding, process death, or OS service restart.
+     * - Prevents duplicate counting if the OS replays a stale/identical location timestamp.
+     * - Detects genuine GPS interruption gaps when the next live fix arrives later, without
+     *   fabricating unmeasured straight-line distance.
+     */
+    fun restoreAnchorAndDistance(
+        distanceKm: Double,
+        lastLat: Double?,
+        lastLng: Double?,
+        lastTimeMs: Long?
+    ) {
+        accumulatedDistanceKm = distanceKm.coerceAtLeast(0.0)
+        if (lastLat != null && lastLng != null && (lastLat != 0.0 || lastLng != 0.0) && lastTimeMs != null && lastTimeMs > 0L) {
+            val restored = Location("restored_anchor").apply {
+                latitude = lastLat
+                longitude = lastLng
+                time = lastTimeMs
+                accuracy = 10f
+            }
+            lastValidLocation = restored
+            lastValidTimestamp = lastTimeMs
+            stationaryAnchor = restored
+        } else {
+            lastValidLocation = null
+            lastValidTimestamp = 0L
+            stationaryAnchor = null
+        }
+    }
+
+    /**
+     * Applies an explicit, driver-verified distance adjustment (e.g., after an audited GPS gap)
+     * without resetting or losing previously accumulated GPS distance.
+     */
+    fun applyAuditedManualDistanceAdjustment(additionalKm: Double): Double {
+        if (additionalKm > 0.0 && !additionalKm.isNaN() && !additionalKm.isInfinite()) {
+            accumulatedDistanceKm += additionalKm
+        }
+        return accumulatedDistanceKm
     }
 
     /**
@@ -151,6 +195,7 @@ class GpsDistanceEngine(
             lastValidTimestamp = location.time
             stationaryAnchor = location
             val speed = if (location.hasSpeed()) location.speed * 3.6f else 0f
+            val straightLineKm = (deltaDistanceM / 1000.0).coerceAtLeast(0.0)
             return ProcessResult(
                 distanceIncrementM = 0.0,
                 totalDistanceKm = accumulatedDistanceKm,
@@ -158,7 +203,9 @@ class GpsDistanceEngine(
                 isMoving = speed >= speedThresholdKmH,
                 accepted = true,
                 rejectionReason = "GPS gap of ${timeDeltaS.toInt()}s detected: resuming without interpolating",
-                gapDetected = true
+                gapDetected = true,
+                gapDurationSeconds = timeDeltaS.toLong(),
+                gapStraightLineKm = straightLineKm
             )
         }
 

@@ -85,7 +85,13 @@ data class TripEntity(
     val driverNetBalance: Double = 0.0,
     val driverBalanceMin: Double = -1.0,
     val driverBalanceMax: Double = -1.0,
-    val settlementStatus: String = "PENDING"
+    val settlementStatus: String = "PENDING",
+    // Meter mode separation (OTP vs DIRECT), 100 KM package flag & connected-first sync readiness
+    val meterMode: String = "OTP",
+    val directCategoryId: String = "LOCAL",
+    val directTariffSnapshotJson: String = "",
+    val use100KmPackage: Boolean = false,
+    val syncStatus: String = "PENDING_SYNC"
 )
 
 @Entity(tableName = "driver_profile")
@@ -148,7 +154,19 @@ data class ActiveTripRecord(
     val isInnovaCrysta: Boolean = false,
     val isNightTrip: Boolean = false,
     val over12Hours: Boolean = false,
-    val packageHours: Int = 1
+    val packageHours: Int = 1,
+    // Direct Meter & lossless GPS anchor/gap recovery fields (v13)
+    val meterMode: String = "OTP",
+    val directCategoryId: String = "LOCAL",
+    val directTariffSnapshotJson: String = "",
+    val use100KmPackage: Boolean = false,
+    val lastAcceptedLat: Double = 0.0,
+    val lastAcceptedLng: Double = 0.0,
+    val lastAcceptedLocationTimeMs: Long = 0L,
+    val isWaitingActive: Boolean = false,
+    val unverifiedGapSeconds: Long = 0L,
+    val unverifiedGapStraightLineKm: Double = 0.0,
+    val needsDistanceVerification: Boolean = false
 )
 
 @Entity(tableName = "vendor_profiles")

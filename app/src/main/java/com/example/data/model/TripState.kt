@@ -38,11 +38,23 @@ data class TripState(
     val isInnovaCrysta: Boolean = false,
     val isNightTrip: Boolean = false,
     val packageHours: Int = 1,
+    val use100KmPackage: Boolean = false,
     val over12Hours: Boolean = false,
     val tollCharge: Double = 0.0,
     val permitCharge: Double = 0.0,
     val parkingCharge: Double = 0.0,
     val hasUnresolvedBoundaryFlag: Boolean = false,
+    // Meter Mode (OTP vs Direct Meter) & Locked Direct Meter Tariff Snapshot
+    val meterMode: String = SangamTariffConfig.METER_MODE_OTP,
+    val directCategoryId: String = SangamTariffConfig.DirectMeterCategory.LOCAL.id,
+    val directTariffSnapshotJson: String = "",
+    // Active Trip Recovery GPS Anchor & Gap Audit Fields
+    val lastAcceptedLat: Double = 0.0,
+    val lastAcceptedLng: Double = 0.0,
+    val lastAcceptedLocationTimeMs: Long = 0L,
+    val unverifiedGapSeconds: Long = 0L,
+    val unverifiedGapStraightLineKm: Double = 0.0,
+    val needsDistanceVerification: Boolean = false,
     // Hourly Rental
     val rentalHourlyRate: Double = 350.0,
     val rentalMinHours: Double = 1.0,

@@ -130,15 +130,18 @@ object TripSnapshotMapper {
             fareBreakdownJson = serializeLineItems(breakdown.lineItems),
             tariffSubtotal = breakdown.tariffFareBeforePassThrough.setScale(2, RoundingMode.HALF_UP).toDouble(),
             passThroughExtrasTotal = breakdown.passThroughExtrasTotal.setScale(2, RoundingMode.HALF_UP).toDouble(),
-            ccStatus = ccStatus,
-            ccRuleLabel = ccRuleLabel,
-            ccAmount = ccAmount,
-            ccMinAmount = ccMin,
-            ccMaxAmount = ccMax,
-            driverNetBalance = driverNet,
-            driverBalanceMin = driverMin,
-            driverBalanceMax = driverMax,
-            settlementStatus = settlementStatus,
+            ccStatus = if (breakdown.isDirectMeter) CC_STATUS_NOT_SPECIFIED else ccStatus,
+            ccRuleLabel = if (breakdown.isDirectMeter) "Direct Meter — No Vendor Commission" else ccRuleLabel,
+            ccAmount = if (breakdown.isDirectMeter) 0.0 else ccAmount,
+            ccMinAmount = if (breakdown.isDirectMeter) -1.0 else ccMin,
+            ccMaxAmount = if (breakdown.isDirectMeter) -1.0 else ccMax,
+            driverNetBalance = if (breakdown.isDirectMeter) breakdown.customerBillTotal.setScale(2, RoundingMode.HALF_UP).toDouble() else driverNet,
+            driverBalanceMin = if (breakdown.isDirectMeter) breakdown.customerBillTotal.setScale(2, RoundingMode.HALF_UP).toDouble() else driverMin,
+            driverBalanceMax = if (breakdown.isDirectMeter) breakdown.customerBillTotal.setScale(2, RoundingMode.HALF_UP).toDouble() else driverMax,
+            settlementStatus = if (breakdown.isDirectMeter) SETTLEMENT_CONFIRMED else settlementStatus,
+            meterMode = breakdown.meterMode,
+            directCategoryId = breakdown.directCategory?.id ?: baseEntity.directCategoryId,
+            use100KmPackage = input.use100KmPackage,
             // Ensure customer-facing invoice entity NEVER stores GPay number
             vendorContactNumber = "",
             vendorInvoiceDetails = ""
@@ -214,6 +217,21 @@ object TripSnapshotMapper {
             )
         }
 
+        val isDirect = trip.meterMode == SangamTariffConfig.METER_MODE_DIRECT
+        val directCat = if (isDirect) SangamTariffConfig.DirectMeterCategory.fromId(trip.directCategoryId) else null
+
+        val effectiveCommission: CommissionResult = if (isDirect) {
+            CommissionResult.NotSpecified("Direct Meter — No Vendor Commission")
+        } else {
+            commissionResult
+        }
+
+        val effectiveDriverBalance: DriverBalanceStatus = if (isDirect) {
+            DriverBalanceStatus.Confirmed(customerTotal)
+        } else {
+            driverBalanceStatus
+        }
+
         return SangamSettlementBreakdown(
             vehicleCategory = category,
             tripType = tripType,
@@ -223,8 +241,10 @@ object TripSnapshotMapper {
             passThroughExtrasTotal = passThrough,
             customerBillTotal = customerTotal,
             lineItems = savedItems,
-            commissionResult = commissionResult,
-            driverBalanceStatus = driverBalanceStatus
+            commissionResult = effectiveCommission,
+            driverBalanceStatus = effectiveDriverBalance,
+            meterMode = if (isDirect) SangamTariffConfig.METER_MODE_DIRECT else SangamTariffConfig.METER_MODE_OTP,
+            directCategory = directCat
         )
     }
 

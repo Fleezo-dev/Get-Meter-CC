@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.example.service.LocationTrackingService
@@ -45,7 +46,8 @@ class MainActivity : ComponentActivity() {
             com.example.service.FloatingSpeedOverlayManager.forceHide(this)
         }
         setContent {
-            MyApplicationTheme {
+            val appearanceMode = settingsViewModel.appearanceMode.collectAsState().value
+            MyApplicationTheme(appearanceMode = appearanceMode) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     TaxiMeterNavGraph(
                         meterViewModel = meterViewModel,

@@ -49,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.database.DriverProfileEntity
+import com.example.ui.theme.LocalGetTaxiColors
 import com.example.util.UpiQrCodeGenerator
 import com.example.viewmodel.MeterViewModel
 import java.io.File
@@ -61,6 +62,7 @@ fun DriverProfileScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val colors = LocalGetTaxiColors.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentProfile by viewModel.driverProfile.collectAsStateWithLifecycle()
     val strings = com.example.util.appStrings()
@@ -195,6 +197,7 @@ fun DriverProfileScreen(
     val vehicleTypePresets = listOf(
         "MINI",
         "SEDAN",
+        "OMNI / EECO",
         "SUV",
         "SUV+",
         "INNOVA"
@@ -206,7 +209,7 @@ fun DriverProfileScreen(
                 title = {
                     Text(
                         text = strings.driverProfileScreenTitle,
-                        color = Color(0xFF0F172A),
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Black,
                         fontSize = 19.sp
                     )
@@ -219,14 +222,14 @@ fun DriverProfileScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = strings.back,
-                            tint = Color(0xFF475569)
+                            tint = colors.primaryAccent
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFFDFBFF))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface)
             )
         },
-        containerColor = Color(0xFFFDFBFF),
+        containerColor = colors.background,
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
@@ -245,12 +248,12 @@ fun DriverProfileScreen(
                     viewModel.saveDriverProfile(updated) {
                         showSuccessMessage = true
                         refreshPermissionStates()
-                        val allGranted = hasFineLocation && hasBackgroundLocation &&
-                            hasOverlayPermission && hasBatteryExemption && hasNotificationPermission
-                        if (!allGranted) {
+                        // Floating overlay permission is strictly OPTIONAL and never required
+                        val essentialGranted = hasFineLocation && hasBackgroundLocation &&
+                            hasBatteryExemption && hasNotificationPermission
+                        if (!essentialGranted) {
                             onboardingStep = when {
                                 !hasFineLocation || !hasBackgroundLocation -> 1
-                                !hasOverlayPermission -> 2
                                 !hasBatteryExemption -> 3
                                 else -> 4
                             }
@@ -260,10 +263,10 @@ fun DriverProfileScreen(
                         }
                     }
                 },
-                icon = { Icon(Icons.Default.Save, contentDescription = null, tint = Color(0xFF090A0C)) },
-                text = { Text(strings.registerSaveProfileButton, fontWeight = FontWeight.Black, color = Color(0xFF090A0C), letterSpacing = if (strings.isTamil) 0.sp else 0.8.sp) },
-                containerColor = Color(0xFFFFC107),
-                contentColor = Color(0xFF090A0C),
+                icon = { Icon(Icons.Default.Save, contentDescription = null, tint = colors.onPrimaryAccent) },
+                text = { Text(strings.registerSaveProfileButton, fontWeight = FontWeight.Black, color = colors.onPrimaryAccent, letterSpacing = if (strings.isTamil) 0.sp else 0.8.sp) },
+                containerColor = colors.primaryAccent,
+                contentColor = colors.onPrimaryAccent,
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier.testTag("save_driver_profile_fab")
             )
@@ -796,11 +799,11 @@ fun DriverProfileScreen(
 
                     PermissionStepRow(
                         stepNumber = 2,
-                        title = strings.permStep2Title,
-                        subtitle = strings.permStep2Subtitle,
+                        title = "${strings.permStep2Title} (Optional)",
+                        subtitle = "Optional — meter works fully without overlay permission",
                         isGranted = hasOverlayPermission,
                         grantedLabel = strings.grantedStatus,
-                        allowLabel = strings.allowAction,
+                        allowLabel = "Optional",
                         onAction = { requestOverlayPermission(context) }
                     )
 
