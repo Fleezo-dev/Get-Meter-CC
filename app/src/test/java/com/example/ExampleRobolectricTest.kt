@@ -466,4 +466,233 @@ class ExampleRobolectricTest {
             (restoredBreakdown.driverBalanceStatus as com.example.util.SangamTariffCalculator.DriverBalanceStatus.Confirmed).amount
         )
     }
+
+    @Test
+    fun `verify local waiting 2 per min shows in Customer Invoice while CC stays separate and hidden`() = kotlinx.coroutines.runBlocking {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = MeterViewModel(app)
+
+        var ready = false
+        viewModel.calculateQuickSettlement(
+            input = com.example.util.SangamTariffCalculator.TripCalculationInput(
+                vehicleCategory = com.example.util.SangamTariffConfig.VehicleCategory.MINI,
+                tripType = com.example.util.SangamTariffConfig.SangamTripType.LOCAL_NORMAL,
+                distanceKm = 4.0,
+                waitingMinutes = 10.0
+            ),
+            pickupAddress = "RS Puram",
+            dropAddress = "Race Course",
+            durationMinutes = 25L
+        ) { ready = true }
+
+        val mainLooper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+        repeat(60) {
+            mainLooper.idle()
+            if (ready && viewModel.currentSettlement.value != null) return@repeat
+            Thread.sleep(50)
+        }
+        mainLooper.idle()
+        assertTrue(ready)
+
+        val settlement = viewModel.currentSettlement.value!!
+        // 80 + 112 + 20 (10 min * ₹2) = 212.00; CC = 30.00; Driver Net = 182.00
+        assertEquals(212.0, settlement.breakdown.customerBillTotal.toDouble(), 0.01)
+        assertEquals(2.0, settlement.tripEntity.waitFarePerMin, 0.01)
+        assertEquals(600L, settlement.tripEntity.waitingSeconds)
+        assertEquals(30.0, settlement.tripEntity.ccAmount, 0.01)
+        assertEquals(182.0, settlement.tripEntity.driverNetBalance, 0.01)
+
+        val customerText = ShareUtils.buildSangamReceiptText(settlement.tripEntity, settlement.breakdown, includeSettlementNote = false)
+        assertTrue("Customer receipt must include Waiting Charge line item", customerText.contains("Waiting Charge"))
+        assertTrue("Customer receipt must show ₹20.00 waiting charge", customerText.contains("₹20.00"))
+        assertTrue("Customer receipt must show ₹212.00 total", customerText.contains("₹212.00"))
+        assertFalse("Customer receipt must NOT contain GPay", customerText.contains("9043743777"))
+        assertFalse("Customer receipt must NOT contain CC", customerText.contains("CC"))
+
+        val customerPdf = PdfGenerator.generateSangamBillPdf(app, settlement.tripEntity, settlement.breakdown)
+        assertTrue(customerPdf.exists() && customerPdf.length() > 0L)
+
+        val vendorText = ShareUtils.buildInternalCcReportText(settlement.tripEntity, settlement.breakdown, "DRV-02")
+        assertTrue(vendorText.contains("₹212.00"))
+        assertTrue(vendorText.contains("₹30.00"))
+        assertTrue(vendorText.contains("₹182.00"))
+        assertTrue(vendorText.contains("9043743777"))
+
+        viewModel.endTripAndClearSettlement()
+    }
+
+    @Test
+    fun `verify Outstation manual Additional Waiting persists in Room and recovers accurately in history`() = kotlinx.coroutines.runBlocking {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val db = TripDatabase.getDatabase(app)
+        val viewModel = MeterViewModel(app)
+
+        var ready = false
+        viewModel.calculateQuickSettlement(
+            input = com.example.util.SangamTariffCalculator.TripCalculationInput(
+                vehicleCategory = com.example.util.SangamTariffConfig.VehicleCategory.SEDAN,
+                tripType = com.example.util.SangamTariffConfig.SangamTripType.OUTSTATION_ROUND_TRIP,
+                distanceKm = 100.0,
+                extraChargeItems = listOf(
+                    com.example.data.model.ExtraChargeItem(
+                        label = "Additional Waiting (2.0 hr @ ₹150/hr)",
+                        amount = 300.0
+                    )
+                )
+            ),
+            pickupAddress = "Coimbatore",
+            dropAddress = "Ooty",
+            durationMinutes = 360L
+        ) { ready = true }
+
+        val mainLooper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+        repeat(60) {
+            mainLooper.idle()
+            if (ready && viewModel.currentSettlement.value != null) return@repeat
+            Thread.sleep(50)
+        }
+        mainLooper.idle()
+        assertTrue(ready)
+
+        val settlement = viewModel.currentSettlement.value!!
+        val savedId = settlement.tripEntity.id
+        assertTrue(savedId > 0)
+        assertEquals(2300.0, settlement.breakdown.customerBillTotal.toDouble(), 0.01)
+
+        viewModel.endTripAndClearSettlement()
+
+        val persisted = db.tripDao().getTripById(savedId)!!
+        val restored = com.example.util.TripSnapshotMapper.toBreakdown(persisted)
+        assertEquals(java.math.BigDecimal("2300.00"), restored.customerBillTotal)
+        assertTrue(
+            "Historical snapshot must preserve separate Additional Waiting line item",
+            restored.lineItems.any { it.label == "Additional Waiting" && it.amount == java.math.BigDecimal("300.00") }
+        )
+        val histCustomerText = ShareUtils.buildSangamReceiptText(persisted, restored, includeSettlementNote = false)
+        assertTrue(histCustomerText.contains("Additional Waiting"))
+        assertTrue(histCustomerText.contains("₹300.00"))
+        assertFalse(histCustomerText.contains("9043743777"))
+    }
+
+    @Test
+    fun `verify Day Rental manual CC updates Room and Vendor Report without altering Customer Invoice`() = kotlinx.coroutines.runBlocking {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val db = TripDatabase.getDatabase(app)
+        val viewModel = MeterViewModel(app)
+
+        var ready = false
+        viewModel.calculateQuickSettlement(
+            input = com.example.util.SangamTariffCalculator.TripCalculationInput(
+                vehicleCategory = com.example.util.SangamTariffConfig.VehicleCategory.INNOVA,
+                tripType = com.example.util.SangamTariffConfig.SangamTripType.DAY_RENTAL,
+                distanceKm = 100.0
+            ),
+            pickupAddress = "Coimbatore",
+            dropAddress = "Pollachi",
+            durationMinutes = 600L
+        ) { ready = true }
+
+        val mainLooper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+        repeat(60) {
+            mainLooper.idle()
+            if (ready && viewModel.currentSettlement.value != null) return@repeat
+            Thread.sleep(50)
+        }
+        mainLooper.idle()
+        assertTrue(ready)
+
+        val initialSettlement = viewModel.currentSettlement.value!!
+        val tripId = initialSettlement.tripEntity.id
+        assertEquals(4000.0, initialSettlement.tripEntity.totalFare, 0.01)
+        assertEquals(com.example.util.TripSnapshotMapper.CC_STATUS_NOT_SPECIFIED, initialSettlement.tripEntity.ccStatus)
+
+        // Driver enters manual variable Day Rental CC = ₹350.00
+        viewModel.updateManualDayRentalCc(tripId, 350.0)
+        repeat(30) {
+            mainLooper.idle()
+            val check = db.tripDao().getTripById(tripId)
+            if (check?.ccStatus == com.example.util.TripSnapshotMapper.CC_STATUS_CONFIRMED) return@repeat
+            Thread.sleep(40)
+        }
+        mainLooper.idle()
+
+        val updatedRecord = db.tripDao().getTripById(tripId)!!
+        assertEquals(4000.0, updatedRecord.totalFare, 0.01) // Customer bill unchanged
+        assertEquals(com.example.util.TripSnapshotMapper.CC_STATUS_CONFIRMED, updatedRecord.ccStatus)
+        assertEquals("Day Rental CC (Manual)", updatedRecord.ccRuleLabel)
+        assertEquals(350.0, updatedRecord.ccAmount, 0.01)
+        assertEquals(3650.0, updatedRecord.driverNetBalance, 0.01)
+
+        val restoredBreakdown = com.example.util.TripSnapshotMapper.toBreakdown(updatedRecord)
+        val customerInvoice = ShareUtils.buildSangamReceiptText(updatedRecord, restoredBreakdown, includeSettlementNote = false)
+        assertTrue(customerInvoice.contains("₹4000.00"))
+        assertFalse("Customer Invoice must NOT expose manual Day Rental CC", customerInvoice.contains("350.00"))
+        assertFalse("Customer Invoice must NOT expose GPay", customerInvoice.contains("9043743777"))
+
+        val vendorReport = ShareUtils.buildInternalCcReportText(updatedRecord, restoredBreakdown, "DRV-09")
+        assertTrue(vendorReport.contains("₹4000.00"))
+        assertTrue(vendorReport.contains("₹350.00"))
+        assertTrue(vendorReport.contains("₹3650.00"))
+        assertTrue(vendorReport.contains("9043743777"))
+
+        viewModel.endTripAndClearSettlement()
+    }
+
+    @Test
+    fun `verify ActiveTripRecord v12 preserves waitingSeconds, tariff mode, vehicle category, and modifiers`() = kotlinx.coroutines.runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = TripDatabase.getDatabase(context)
+        val dao = db.tripDao()
+
+        val activeRecord = com.example.data.database.ActiveTripRecord(
+            tripNumber = "GTM-20261118-REC01",
+            startTime = 1700000000000L,
+            distanceKm = 6.2,
+            durationSeconds = 900L,
+            waitingSeconds = 300L,
+            currentFare = 580.0,
+            isPaused = true,
+            baseFare = 200.0,
+            farePerKm = 35.0,
+            waitFarePerMin = 2.0,
+            currency = "₹",
+            isOutOfCity = true,
+            pickupAddress = "Peelamedu",
+            serviceType = "LOCAL",
+            vehicleCategoryId = com.example.util.SangamTariffConfig.VehicleCategory.SUV.id,
+            sangamTripTypeId = com.example.util.SangamTariffConfig.SangamTripType.LOCAL_MINIMUM_BILL.id,
+            isInnovaCrysta = false,
+            isNightTrip = true,
+            over12Hours = false,
+            packageHours = 2
+        )
+        dao.saveActiveTrip(activeRecord)
+
+        val restored = dao.getActiveTrip()
+        assertNotNull(restored)
+        assertEquals(300L, restored!!.waitingSeconds)
+        assertEquals("SUV", restored.vehicleCategoryId)
+        assertEquals("LOCAL_MINIMUM_BILL", restored.sangamTripTypeId)
+        assertTrue(restored.isOutOfCity)
+        assertTrue(restored.isNightTrip)
+        assertEquals(2, restored.packageHours)
+
+        // Verify live buildSangamInput computes waitingMinutes = 5.0 -> ₹10 waiting on SUV Min Bill (₹450 + ₹80 + ₹50 + ₹10 = ₹590)
+        val state = com.example.data.model.TripState(
+            status = TripStatus.PAUSED,
+            distanceKm = restored.distanceKm,
+            durationSeconds = restored.durationSeconds,
+            waitingSeconds = restored.waitingSeconds,
+            vehicleCategoryId = restored.vehicleCategoryId,
+            sangamTripTypeId = restored.sangamTripTypeId,
+            isOutOfCity = restored.isOutOfCity,
+            isNightTrip = restored.isNightTrip
+        )
+        val calcInput = LocationTrackingService.buildSangamInput(state)
+        assertEquals(5.0, calcInput.waitingMinutes, 0.001)
+        val breakdown = com.example.util.SangamTariffCalculator.calculateTripFareAndSettlement(calcInput)
+        assertEquals(java.math.BigDecimal("590.00"), breakdown.customerBillTotal)
+
+        dao.clearActiveTrip()
+    }
 }

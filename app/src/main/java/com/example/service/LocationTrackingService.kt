@@ -405,10 +405,13 @@ class LocationTrackingService : Service() {
                 state.packageHours.coerceIn(1, 12)
             }
             val effectiveOver12 = state.over12Hours || (state.durationSeconds > 12L * 3600L)
-            val waitingMins = if (tripType == SangamTariffConfig.SangamTripType.HOURLY_RENTAL) {
-                0.0
-            } else {
+            val waitingMins = if (
+                tripType == SangamTariffConfig.SangamTripType.LOCAL_NORMAL ||
+                tripType == SangamTariffConfig.SangamTripType.LOCAL_MINIMUM_BILL
+            ) {
                 state.waitingSeconds / 60.0
+            } else {
+                0.0
             }
             return SangamTariffCalculator.TripCalculationInput(
                 vehicleCategory = category,
@@ -423,7 +426,8 @@ class LocationTrackingService : Service() {
                 tollCharge = state.tollCharge,
                 permitCharge = state.permitCharge,
                 parkingCharge = state.parkingCharge,
-                customExtrasTotal = liveExtraTotal,
+                customExtrasTotal = if (state.extraChargeItems.isEmpty()) liveExtraTotal else 0.0,
+                extraChargeItems = state.extraChargeItems,
                 outstationWaitHours = state.outstationWaitHours
             )
         }
@@ -580,8 +584,9 @@ class LocationTrackingService : Service() {
             Log.w(TAG, "onStartCommand called with null intent (Service restarted by Android OS)")
             recordDiagnostic("Service restarted by Android OS (START_STICKY)")
             serviceScope.launch {
-                val record = if (userExplicitlyStartedTrip) repository.getActiveTrip() else null
+                val record = repository.getActiveTrip()
                 if (record != null) {
+                    userExplicitlyStartedTrip = true
                     recordDiagnostic("Active trip found in DB, restoring...")
                     recoverSavedTrip()
                 } else {
@@ -959,13 +964,26 @@ class LocationTrackingService : Service() {
                     repository.generateDeterministicTripNumber(record.startTime)
                 }
 
+                userExplicitlyStartedTrip = true
+                lastMovingLocationTimestamp = 0L
                 gpsDistanceEngine.reset(record.distanceKm)
 
                 val recoveredExtras = ExtraChargeItem.deserialize(record.extraChargesJson)
-                val recoveredSangamType = when (ServiceType.fromId(record.serviceType)) {
+                val fallbackSangamType = when (ServiceType.fromId(record.serviceType)) {
                     ServiceType.RENTAL -> SangamTariffConfig.SangamTripType.HOURLY_RENTAL.id
                     ServiceType.OUTSTATION -> SangamTariffConfig.SangamTripType.OUTSTATION_ONE_WAY.id
                     ServiceType.LOCAL -> SangamTariffConfig.SangamTripType.LOCAL_NORMAL.id
+                }
+                val recoveredSangamType = record.sangamTripTypeId.ifBlank { fallbackSangamType }
+                val recoveredCategory = SangamTariffConfig.VehicleCategory.fromId(record.vehicleCategoryId).id
+                val recoveredTripTypeEnum = SangamTariffConfig.SangamTripType.fromId(recoveredSangamType)
+                val recoveredWaitRate = if (
+                    recoveredTripTypeEnum == SangamTariffConfig.SangamTripType.LOCAL_NORMAL ||
+                    recoveredTripTypeEnum == SangamTariffConfig.SangamTripType.LOCAL_MINIMUM_BILL
+                ) {
+                    if (record.waitFarePerMin > 0.0) record.waitFarePerMin else SangamTariffConfig.localWaitingRatePerMin.toDouble()
+                } else {
+                    0.0
                 }
                 _tripState.value = TripState(
                     status = if (record.isPaused) TripStatus.PAUSED else TripStatus.RUNNING,
@@ -976,12 +994,17 @@ class LocationTrackingService : Service() {
                     distanceKm = record.distanceKm,
                     baseFare = record.baseFare,
                     farePerKm = record.farePerKm,
-                    waitFarePerMin = record.waitFarePerMin,
+                    waitFarePerMin = recoveredWaitRate,
                     currency = record.currency,
                     isOutOfCity = record.isOutOfCity,
                     pickupAddress = record.pickupAddress,
                     serviceType = record.serviceType,
+                    vehicleCategoryId = recoveredCategory,
                     sangamTripTypeId = recoveredSangamType,
+                    isInnovaCrysta = record.isInnovaCrysta,
+                    isNightTrip = record.isNightTrip,
+                    over12Hours = record.over12Hours,
+                    packageHours = record.packageHours.coerceIn(1, 12),
                     rentalHourlyRate = record.rentalBaseFare,
                     rentalMinHours = record.rentalBaseHours,
                     rentalExtraHrRate = record.rentalExtraHrRate,
@@ -1508,7 +1531,7 @@ class LocationTrackingService : Service() {
                         farePerKm = state.farePerKm,
                         waitFarePerMin = state.waitFarePerMin,
                         currency = state.currency,
-                        isOutOfCity = false,
+                        isOutOfCity = state.isOutOfCity,
                         pickupAddress = state.pickupAddress,
                         serviceType = state.serviceType,
                         rentalBaseHours = state.rentalMinHours,
@@ -1532,7 +1555,13 @@ class LocationTrackingService : Service() {
                         vendorBusinessAddress = state.vendorBusinessAddress,
                         vendorEmail = state.vendorEmail,
                         vendorGstin = state.vendorGstin,
-                        vendorInvoiceDetails = state.vendorInvoiceDetails
+                        vendorInvoiceDetails = state.vendorInvoiceDetails,
+                        vehicleCategoryId = state.vehicleCategoryId,
+                        sangamTripTypeId = state.sangamTripTypeId,
+                        isInnovaCrysta = state.isInnovaCrysta,
+                        isNightTrip = state.isNightTrip,
+                        over12Hours = state.over12Hours,
+                        packageHours = state.packageHours
                     )
                 )
             }

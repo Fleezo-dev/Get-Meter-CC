@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.model.ExtraChargeItem
 import com.example.util.SangamTariffCalculator
 import com.example.util.SangamTariffConfig
 import com.example.util.SangamTariffConfig.SangamTripType
@@ -447,24 +448,24 @@ private fun buildRateSummaryText(
     isInnovaCrysta: Boolean,
     packageHours: Int
 ): String {
+    val localWait = SangamTariffConfig.localWaitingRatePerMin.toInt()
     return when (tripType) {
         SangamTripType.LOCAL_NORMAL -> {
             val rate = SangamTariffConfig.localNormalRates[category]
             if (rate != null) {
-                "Local Normal: ₹${rate.initialCharge.toInt()} initial + ₹${rate.perKmRate.toInt()}/km"
+                "Local Normal: ₹${rate.initialCharge.toInt()} initial + ₹${rate.perKmRate.toInt()}/km • Wait ₹$localWait/min"
             } else "Not applicable for ${category.displayName}"
         }
         SangamTripType.LOCAL_MINIMUM_BILL -> {
             when (category) {
                 VehicleCategory.MINI, VehicleCategory.SEDAN ->
-                    "Min Bill: 1–5 KM ₹200 | 5–6 KM ₹250 | >6 KM ₹80 + ₹28/km (5 KM overlap flagged)"
+                    "Min Bill: 1–5 KM ₹200 | 5–6 KM ₹250 | >6 KM ₹80 + ₹28/km • Wait ₹$localWait/min"
                 VehicleCategory.SUV ->
-                    "Min Bill: 1–7 KM ₹450 | >7 KM ₹200 + ₹35/km"
+                    "Min Bill: 1–7 KM ₹450 | >7 KM ₹200 + ₹35/km • Wait ₹$localWait/min"
                 VehicleCategory.SUV_PLUS ->
-                    "Min Bill: 1–10 KM ₹700 | >10 KM ₹250 + ₹45/km"
+                    "Min Bill: 1–10 KM ₹700 | >10 KM ₹250 + ₹45/km • Wait ₹$localWait/min"
                 VehicleCategory.INNOVA ->
-                    "Min Bill: 1–10 KM ₹800 | >10 KM ₹250 + ₹50/km"
-                else -> "Not applicable for ${category.displayName}"
+                    "Min Bill: 1–10 KM ₹800 | >10 KM ₹250 + ₹50/km • Wait ₹$localWait/min"
             }
         }
         SangamTripType.HOURLY_RENTAL -> {
@@ -475,13 +476,13 @@ private fun buildRateSummaryText(
         SangamTripType.OUTSTATION_ONE_WAY -> {
             val r = SangamTariffConfig.outstationRates[category]
             if (r != null) {
-                "One-Way: ₹${r.oneWayInitialCharge.toInt()} base + ₹${r.oneWayPerKm.toInt()}/km • >12h ₹400 • 10% CC"
+                "One-Way: ₹${r.oneWayInitialCharge.toInt()} base + ₹${r.oneWayPerKm.toInt()}/km • >12h ₹400 • Manual wait • 10% CC"
             } else "Not applicable"
         }
         SangamTripType.OUTSTATION_ROUND_TRIP -> {
             val r = SangamTariffConfig.outstationRates[category]
             if (r != null) {
-                "Round-Trip: ₹${r.roundTripInitialCharge.toInt()} base + ₹${r.roundTripPerKm.toInt()}/km • >12h ₹400 • 10% CC"
+                "Round-Trip: ₹${r.roundTripInitialCharge.toInt()} base + ₹${r.roundTripPerKm.toInt()}/km • >12h ₹400 • Manual wait • 10% CC"
             } else "Not applicable"
         }
         SangamTripType.DAY_RENTAL -> {
@@ -492,7 +493,7 @@ private fun buildRateSummaryText(
             }
             if (r != null) {
                 val extra12 = if (r.after12HoursExtra.toInt() > 0) " • >12h +₹${r.after12HoursExtra.toInt()}" else ""
-                "Day Rental: ₹${r.baseAmount.toInt()} + ₹${r.perKmRate.toInt()}/km$extra12"
+                "Day Rental: ₹${r.baseAmount.toInt()} + ₹${r.perKmRate.toInt()}/km$extra12 • CC: Variable (Manual)"
             } else "Not available"
         }
     }
@@ -517,6 +518,9 @@ fun QuickFareCalculatorDialog(
 ) {
     var distanceInput by remember { mutableStateOf("") }
     var durationInput by remember { mutableStateOf("") }
+    var localWaitMinInput by remember { mutableStateOf("") }
+    var outstationWaitHoursInput by remember { mutableStateOf("") }
+    var outstationWaitRateInput by remember { mutableStateOf("") }
     var hoursInput by remember { mutableIntStateOf(initialPackageHours.coerceIn(1, 12)) }
     var outsideCity by remember { mutableStateOf(initialOutsideCity) }
     var nightTrip by remember { mutableStateOf(initialNightTrip) }
@@ -627,6 +631,15 @@ fun QuickFareCalculatorDialog(
                 }
 
                 if (initialTripType == SangamTripType.LOCAL_NORMAL || initialTripType == SangamTripType.LOCAL_MINIMUM_BILL) {
+                    OutlinedTextField(
+                        value = localWaitMinInput,
+                        onValueChange = { localWaitMinInput = it },
+                        label = { Text("Local Waiting (Minutes, ₹2/min, optional)") },
+                        placeholder = { Text("e.g. 10") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = darkFieldColors(),
+                        modifier = Modifier.fillMaxWidth().testTag("quick_calc_local_wait_input")
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         ModifierToggleChip(
                             label = "Outside City +₹80",
@@ -655,6 +668,31 @@ fun QuickFareCalculatorDialog(
                         testTag = "quick_calc_over_12",
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Text(
+                        text = "Manual Outstation Waiting (optional — no auto-waiting)",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = outstationWaitHoursInput,
+                            onValueChange = { outstationWaitHoursInput = it },
+                            label = { Text("Wait Hours") },
+                            placeholder = { Text("e.g. 2") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            colors = darkFieldColors(),
+                            modifier = Modifier.weight(1f).testTag("quick_calc_outstation_wait_hours")
+                        )
+                        OutlinedTextField(
+                            value = outstationWaitRateInput,
+                            onValueChange = { outstationWaitRateInput = it },
+                            label = { Text("Rate / Hr (₹)") },
+                            placeholder = { Text("Manual") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            colors = darkFieldColors(),
+                            modifier = Modifier.weight(1f).testTag("quick_calc_outstation_wait_rate")
+                        )
+                    }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -717,12 +755,45 @@ fun QuickFareCalculatorDialog(
                             errorMsg = "Enter valid distance in KM"
                             return@Button
                         }
+                        val localWaitMins = if (
+                            initialTripType == SangamTripType.LOCAL_NORMAL ||
+                            initialTripType == SangamTripType.LOCAL_MINIMUM_BILL
+                        ) {
+                            localWaitMinInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+                        } else {
+                            0.0
+                        }
+                        val outWaitHrs = outstationWaitHoursInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+                        val outWaitRate = outstationWaitRateInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+                        val customExtraVal = customExtrasInput.trim().toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+                        val itemizedExtras = mutableListOf<ExtraChargeItem>()
+                        if ((initialTripType == SangamTripType.OUTSTATION_ONE_WAY ||
+                                initialTripType == SangamTripType.OUTSTATION_ROUND_TRIP) &&
+                            outWaitHrs > 0.0 && outWaitRate > 0.0
+                        ) {
+                            val waitTotal = outWaitHrs * outWaitRate
+                            itemizedExtras.add(
+                                ExtraChargeItem(
+                                    label = "Additional Waiting (${String.format(Locale.US, "%.1f", outWaitHrs)} hr @ ₹${String.format(Locale.US, "%.0f", outWaitRate)}/hr)",
+                                    amount = waitTotal
+                                )
+                            )
+                        }
+                        if (customExtraVal > 0.0 && itemizedExtras.isNotEmpty()) {
+                            itemizedExtras.add(
+                                ExtraChargeItem(
+                                    label = "Additional Charges",
+                                    amount = customExtraVal
+                                )
+                            )
+                        }
+
                         val input = SangamTariffCalculator.TripCalculationInput(
                             vehicleCategory = initialCategory,
                             tripType = initialTripType,
                             distanceKm = dist,
                             packageHours = hoursInput,
-                            waitingMinutes = 0.0,
+                            waitingMinutes = localWaitMins,
                             isInnovaCrysta = initialInnovaCrysta && initialCategory == VehicleCategory.INNOVA,
                             isOutsideCity = outsideCity,
                             isNightTrip = nightTrip,
@@ -730,7 +801,8 @@ fun QuickFareCalculatorDialog(
                             tollCharge = tollInput.trim().toDoubleOrNull() ?: 0.0,
                             permitCharge = permitInput.trim().toDoubleOrNull() ?: 0.0,
                             parkingCharge = parkingInput.trim().toDoubleOrNull() ?: 0.0,
-                            customExtrasTotal = customExtrasInput.trim().toDoubleOrNull() ?: 0.0
+                            customExtrasTotal = if (itemizedExtras.isEmpty()) customExtraVal else 0.0,
+                            extraChargeItems = itemizedExtras
                         )
                         val durMin = durationInput.trim().toLongOrNull() ?: 0L
                         onCalculateAndSettle(input, pickupInput.trim(), dropInput.trim(), durMin)
@@ -789,11 +861,12 @@ fun SangamTariffChartDialog(onDismiss: () -> Unit) {
                         "• SUV: ₹200 + ₹35/km | Min: 1–7km ₹450, >7km ₹200+₹35/km\n" +
                         "• SUV+: ₹250 + ₹45/km | Min: 1–10km ₹700, >10km ₹250+₹45/km\n" +
                         "• INNOVA: ₹250 + ₹50/km | Min: 1–10km ₹800, >10km ₹250+₹50/km\n" +
+                        "• Waiting Charge: ₹2/min (separate line item; excluded from Vendor CC)\n" +
                         "• Extras: Outside city ₹80 | Night (11PM–6AM) ₹50"
                 )
                 ReferenceBlock(
                     title = "2. Local Commission",
-                    body = "1–5 KM: ₹30 | 6–10 KM: ₹60–₹75 | 10–25 KM: ₹80 | >25 KM: 10% | >₹800 bill: 10%"
+                    body = "1–5 KM: ₹30 | 6–10 KM: ₹60–₹75 | 10–25 KM: ₹80 | >25 KM: 10% | >₹800 bill: 10% (base tariff excl. waiting)"
                 )
                 ReferenceBlock(
                     title = "3. Hourly Rental (GET TAXI Uniform Tariff)",
@@ -804,16 +877,17 @@ fun SangamTariffChartDialog(onDismiss: () -> Unit) {
                 )
                 ReferenceBlock(
                     title = "4. Outstation & Day Rental",
-                    body = "• Outstation One-Way: ₹300 base + ₹30/km (>12h +₹400, 10% CC)\n" +
-                        "• Outstation Round-Trip: ₹500 base + ₹15/km (>12h +₹400, 10% CC)\n" +
-                        "• Day Rental: MINI/SEDAN ₹2000+10/km | SUV ₹2300+13/km | SUV+ ₹2400+14/km | INNOVA ₹2500+15/km | CRYSTA ₹3000+16/km"
+                    body = "• Outstation One-Way: ₹300 base + ₹30/km (>12h +₹400, 10% CC, manual waiting only)\n" +
+                        "• Outstation Round-Trip: ₹500 base + ₹15/km (>12h +₹400, 10% CC, manual waiting only)\n" +
+                        "• Day Rental: MINI/SEDAN ₹2000+10/km | SUV ₹2300+13/km | SUV+ ₹2400+14/km | INNOVA ₹2500+15/km | CRYSTA ₹3000+16/km\n" +
+                        "• Day Rental CC: Variable / Managed manually per trip (no fixed %)"
                 )
                 ReferenceBlock(
-                    title = "5. Rules Requiring Confirmation",
+                    title = "5. Rules Requiring Confirmation / Manual Management",
                     body = "1) Exact 5.0 KM MINI/SEDAN min-bill overlap (₹200 vs ₹250)\n" +
                         "2) Local commission 6–10 KM range (₹60–₹75) & 5–6 / 10 KM boundaries\n" +
                         "3) >25 KM (10%) vs >₹800 bill (10%) alternative vs cumulative\n" +
-                        "4) Optional Outstation Round-Trip Waiting Rate & Day Rental CC",
+                        "4) Outstation Additional Waiting (manual entry only) & Day Rental CC (variable/manual per trip)",
                     accentColor = WarningAmber
                 )
             }

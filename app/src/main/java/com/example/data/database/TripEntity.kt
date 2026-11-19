@@ -141,7 +141,14 @@ data class ActiveTripRecord(
     val vendorBusinessAddress: String = "",
     val vendorEmail: String = "",
     val vendorGstin: String = "",
-    val vendorInvoiceDetails: String = ""
+    val vendorInvoiceDetails: String = "",
+    // GET TAXI tariff mode & modifiers for lossless recovery
+    val vehicleCategoryId: String = "MINI",
+    val sangamTripTypeId: String = "LOCAL_NORMAL",
+    val isInnovaCrysta: Boolean = false,
+    val isNightTrip: Boolean = false,
+    val over12Hours: Boolean = false,
+    val packageHours: Int = 1
 )
 
 @Entity(tableName = "vendor_profiles")

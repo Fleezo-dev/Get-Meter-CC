@@ -1,5 +1,6 @@
 package com.example.util
 
+import com.example.data.model.ExtraChargeItem
 import com.example.util.SangamTariffCalculator.CommissionResult
 import com.example.util.SangamTariffCalculator.DriverBalanceStatus
 import com.example.util.SangamTariffCalculator.TripCalculationInput
@@ -198,5 +199,150 @@ class SangamTariffCalculatorTest {
         assertEquals(BigDecimal("4600.00"), crysta.customerBillTotal) // 3000 + 1600
         assertTrue(crysta.isInnovaCrysta)
         assertTrue(crysta.commissionResult is CommissionResult.NotSpecified)
+    }
+
+    @Test
+    fun `local normal waiting charge at 2 per min updates customer bill and stays completely separate from vendor CC`() {
+        // MINI 4.0 km + 10 min waiting: Base 80 + 112 = 192; Waiting = 20; Total = 212; CC = 30; Driver Net = 182
+        val miniWithWait = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                vehicleCategory = VehicleCategory.MINI,
+                tripType = SangamTripType.LOCAL_NORMAL,
+                distanceKm = 4.0,
+                waitingMinutes = 10.0
+            )
+        )
+        assertEquals(BigDecimal("212.00"), miniWithWait.customerBillTotal)
+        assertTrue(miniWithWait.lineItems.any { it.label == "Waiting Charge" && it.amount == BigDecimal("20.00") })
+        assertEquals(BigDecimal("30.00"), (miniWithWait.commissionResult as CommissionResult.Confirmed).amount)
+        assertEquals(BigDecimal("182.00"), (miniWithWait.driverBalanceStatus as DriverBalanceStatus.Confirmed).amount)
+
+        // Boundary Isolation: INNOVA 11 km = 250 + 550 = ₹800 base tariff (NOT >₹800).
+        // Adding 20 min waiting (+₹40) brings customer bill to ₹840, but Vendor CC MUST remain ₹80 (10–25 km slab), NOT 10% (₹84)!
+        val innovaBoundary = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                vehicleCategory = VehicleCategory.INNOVA,
+                tripType = SangamTripType.LOCAL_NORMAL,
+                distanceKm = 11.0,
+                waitingMinutes = 20.0
+            )
+        )
+        assertEquals(BigDecimal("840.00"), innovaBoundary.customerBillTotal)
+        assertTrue(innovaBoundary.lineItems.any { it.label == "Waiting Charge" && it.amount == BigDecimal("40.00") })
+        assertEquals(BigDecimal("80.00"), (innovaBoundary.commissionResult as CommissionResult.Confirmed).amount)
+        assertEquals(BigDecimal("760.00"), (innovaBoundary.driverBalanceStatus as DriverBalanceStatus.Confirmed).amount)
+
+        // Pro-rata fractional minutes: 2.5 min (150 sec) = ₹5.00
+        val fractional = SangamTariffCalculator.calculateLocalNormal(
+            category = VehicleCategory.MINI,
+            distanceKm = 2.0,
+            waitingMinutes = 2.5
+        )
+        // 80 + 56 + 5 = 141.00
+        assertEquals(BigDecimal("141.00"), fractional.customerBillTotal)
+        assertTrue(fractional.lineItems.any { it.label == "Waiting Charge" && it.amount == BigDecimal("5.00") })
+    }
+
+    @Test
+    fun `local minimum bill waiting charge at 2 per min is separate line item and excluded from vendor CC`() {
+        // MINI 3.5 km min bill ₹200 + 7.5 min waiting (₹15) = ₹215.00; CC = ₹30.00; Driver Net = ₹185.00
+        val minBillWait = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                vehicleCategory = VehicleCategory.MINI,
+                tripType = SangamTripType.LOCAL_MINIMUM_BILL,
+                distanceKm = 3.5,
+                waitingMinutes = 7.5
+            )
+        )
+        assertEquals(BigDecimal("215.00"), minBillWait.customerBillTotal)
+        assertTrue(minBillWait.lineItems.any { it.label == "Waiting Charge" && it.amount == BigDecimal("15.00") })
+        assertEquals(BigDecimal("30.00"), (minBillWait.commissionResult as CommissionResult.Confirmed).amount)
+        assertEquals(BigDecimal("185.00"), (minBillWait.driverBalanceStatus as DriverBalanceStatus.Confirmed).amount)
+
+        // INNOVA 10.0 km min bill ₹800 + 15 min waiting (₹30) = ₹830.00; CC stays on base ₹800 (NOT >₹800 10%)
+        val innovaMin = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                vehicleCategory = VehicleCategory.INNOVA,
+                tripType = SangamTripType.LOCAL_MINIMUM_BILL,
+                distanceKm = 10.0,
+                waitingMinutes = 15.0,
+                rulesConfig = SangamTariffConfig.TariffRulesConfig(
+                    localCommissionConfig = LocalCommissionConfig(
+                        tenKmBoundaryPolicy = CommissionBoundaryPolicy.USE_UPPER_SLAB
+                    )
+                )
+            )
+        )
+        assertEquals(BigDecimal("830.00"), innovaMin.customerBillTotal)
+        assertEquals(BigDecimal("80.00"), (innovaMin.commissionResult as CommissionResult.Confirmed).amount)
+        assertEquals(BigDecimal("750.00"), (innovaMin.driverBalanceStatus as DriverBalanceStatus.Confirmed).amount)
+    }
+
+    @Test
+    fun `outstation ignores automatic waiting and displays manual Additional Waiting separately via extraChargeItems`() {
+        // Automatic waitingMinutes MUST be ignored for Outstation
+        val autoIgnored = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                vehicleCategory = VehicleCategory.SEDAN,
+                tripType = SangamTripType.OUTSTATION_ONE_WAY,
+                distanceKm = 100.0,
+                waitingMinutes = 60.0
+            )
+        )
+        // One-Way: 300 + 100*30 = 3300.00 (zero auto waiting)
+        assertEquals(BigDecimal("3300.00"), autoIgnored.customerBillTotal)
+        assertTrue(autoIgnored.lineItems.none { it.label.contains("Waiting", ignoreCase = true) })
+
+        // Manual Additional Waiting + Toll via extraChargeItems renders as separate line items
+        val manualExtras = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                vehicleCategory = VehicleCategory.SEDAN,
+                tripType = SangamTripType.OUTSTATION_ROUND_TRIP,
+                distanceKm = 100.0,
+                extraChargeItems = listOf(
+                    ExtraChargeItem(label = "Additional Waiting (2.0 hr @ ₹150/hr)", amount = 300.0),
+                    ExtraChargeItem(label = "Toll", amount = 120.0)
+                )
+            )
+        )
+        // Base 500 + 1500 = 2000; Extras = 300 + 120 = 420; Customer Bill = 2420.00; CC = 10% of 2000 = 200.00
+        assertEquals(BigDecimal("2000.00"), manualExtras.tariffFareBeforePassThrough)
+        assertEquals(BigDecimal("420.00"), manualExtras.passThroughExtrasTotal)
+        assertEquals(BigDecimal("2420.00"), manualExtras.customerBillTotal)
+        assertTrue(manualExtras.lineItems.any { it.label == "Additional Waiting" && it.detail == "2.0 hr @ ₹150/hr" && it.amount == BigDecimal("300.00") })
+        assertTrue(manualExtras.lineItems.any { it.label == "Toll" && it.amount == BigDecimal("120.00") })
+        assertEquals(BigDecimal("200.00"), (manualExtras.commissionResult as CommissionResult.Confirmed).amount)
+        assertEquals(BigDecimal("2220.00"), (manualExtras.driverBalanceStatus as DriverBalanceStatus.Confirmed).amount)
+    }
+
+    @Test
+    fun `day rental has no hardcoded fixed CC percentage and supports manual variable CC`() {
+        val withoutManualCc = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                vehicleCategory = VehicleCategory.MINI,
+                tripType = SangamTripType.DAY_RENTAL,
+                distanceKm = 100.0
+            )
+        )
+        assertEquals(BigDecimal("3000.00"), withoutManualCc.customerBillTotal) // 2000 + 100*10
+        assertTrue(withoutManualCc.commissionResult is CommissionResult.NotSpecified)
+        assertTrue(
+            (withoutManualCc.commissionResult as CommissionResult.NotSpecified).reason.contains("variable", ignoreCase = true)
+        )
+
+        val withManualCc = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                vehicleCategory = VehicleCategory.MINI,
+                tripType = SangamTripType.DAY_RENTAL,
+                distanceKm = 100.0,
+                manualDayRentalCcAmount = 250.0
+            )
+        )
+        assertEquals(BigDecimal("3000.00"), withManualCc.customerBillTotal)
+        assertTrue(withManualCc.commissionResult is CommissionResult.Confirmed)
+        val confirmed = withManualCc.commissionResult as CommissionResult.Confirmed
+        assertEquals("Day Rental CC (Manual)", confirmed.ruleLabel)
+        assertEquals(BigDecimal("250.00"), confirmed.amount)
+        assertEquals(BigDecimal("2750.00"), (withManualCc.driverBalanceStatus as DriverBalanceStatus.Confirmed).amount)
     }
 }

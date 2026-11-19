@@ -47,6 +47,28 @@ interface TripDao {
     @Query("UPDATE trips SET settlementStatus = :status WHERE id = :tripId")
     suspend fun updateTripSettlementStatus(tripId: Int, status: String)
 
+    @Query(
+        """
+        UPDATE trips
+        SET ccStatus = :ccStatus,
+            ccRuleLabel = :ccRuleLabel,
+            ccAmount = :ccAmount,
+            ccMinAmount = :ccAmount,
+            ccMaxAmount = :ccAmount,
+            driverNetBalance = :driverNetBalance,
+            driverBalanceMin = :driverNetBalance,
+            driverBalanceMax = :driverNetBalance
+        WHERE id = :tripId
+        """
+    )
+    suspend fun updateTripManualCc(
+        tripId: Int,
+        ccStatus: String,
+        ccRuleLabel: String,
+        ccAmount: Double,
+        driverNetBalance: Double
+    )
+
     @Query("DELETE FROM trips WHERE id = :id")
     suspend fun deleteTripById(id: Int)
 

@@ -110,7 +110,7 @@ fun TariffDetailsScreen(
                     "Round-Trip: ₹${outstationRef?.roundTripInitialCharge?.toInt() ?: 500} base + ₹${outstationRef?.roundTripPerKm?.toInt() ?: 15}/km",
                     "Driver Allowance (>12 Hours): ₹${SangamTariffConfig.outstationOver12HoursDriverAllowance.toInt()}",
                     "Company Commission (CC): ${(SangamTariffConfig.outstationCommissionPercent.toDouble() * 100).toInt()}% on tariff subtotal (excl. toll/permit/parking)",
-                    "Waiting Time: No automatic waiting fee charged on outstation trips"
+                    "Additional Waiting: Manual entry only via Extra Charges (no automatic waiting timer)"
                 )
             )
 
@@ -128,8 +128,9 @@ fun TariffDetailsScreen(
                         "${cat.displayName}: ₹${normal.initialCharge.toInt()} + ₹${normal.perKmRate.toInt()}/km | $minDesc"
                     }
                 } + listOf(
+                    "Waiting Charge: ₹${SangamTariffConfig.localWaitingRatePerMin.toInt()}/min (Local Normal & Local Min Bill — separate from Vendor CC)",
                     "Modifiers: Outside City +₹${SangamTariffConfig.localOutsideCityCharge.toInt()} | Night (11 PM–6 AM) +₹${SangamTariffConfig.localNightCharge.toInt()}",
-                    "Local CC Slabs: 1–5 KM ₹30 | 6–10 KM ₹60–₹75 | 10–25 KM ₹80 | >25 KM or >₹800 Bill 10%"
+                    "Local CC Slabs: 1–5 KM ₹30 | 6–10 KM ₹60–₹75 | 10–25 KM ₹80 | >25 KM or >₹800 Bill 10% (base tariff excl. waiting)"
                 )
             )
 
@@ -139,7 +140,8 @@ fun TariffDetailsScreen(
                     val r = SangamTariffConfig.dayRentalRates[cat] ?: return@mapNotNull null
                     "${cat.displayName}: ₹${r.baseAmount.toInt()} + ₹${r.perKmRate.toInt()}/km"
                 } + listOf(
-                    "Innova Crysta: ₹${SangamTariffConfig.innovaCrystaDayRentalRate.baseAmount.toInt()} + ₹${SangamTariffConfig.innovaCrystaDayRentalRate.perKmRate.toInt()}/km"
+                    "Innova Crysta: ₹${SangamTariffConfig.innovaCrystaDayRentalRate.baseAmount.toInt()} + ₹${SangamTariffConfig.innovaCrystaDayRentalRate.perKmRate.toInt()}/km",
+                    "Company Commission (CC): Variable / Managed manually per trip (no fixed percentage)"
                 )
             )
 

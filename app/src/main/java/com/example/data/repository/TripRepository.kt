@@ -98,6 +98,16 @@ class TripRepository(private val tripDao: TripDao) {
         tripDao.updateTripSettlementStatus(tripId, status)
     }
 
+    suspend fun updateTripManualCc(
+        tripId: Int,
+        ccStatus: String,
+        ccRuleLabel: String,
+        ccAmount: Double,
+        driverNetBalance: Double
+    ) {
+        tripDao.updateTripManualCc(tripId, ccStatus, ccRuleLabel, ccAmount, driverNetBalance)
+    }
+
     suspend fun deleteTripById(id: Int) {
         tripDao.deleteTripById(id)
     }

@@ -1,5 +1,6 @@
 package com.example.util
 
+import com.example.data.model.ExtraChargeItem
 import com.example.util.SangamTariffConfig.Above25KmAnd800Rule
 import com.example.util.SangamTariffConfig.CommissionBoundaryPolicy
 import com.example.util.SangamTariffConfig.LocalCommissionConfig
@@ -10,6 +11,7 @@ import com.example.util.SangamTariffConfig.VehicleCategory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.DecimalFormat
+import kotlin.math.roundToLong
 
 /**
  * Deterministic BigDecimal Fare & Settlement Calculator for GET TAXI.
@@ -53,9 +55,11 @@ object SangamTariffCalculator {
         val permitCharge: Double = 0.0,
         val parkingCharge: Double = 0.0,
         val customExtrasTotal: Double = 0.0,
+        val extraChargeItems: List<ExtraChargeItem> = emptyList(),
         val rulesConfig: TariffRulesConfig = SangamTariffConfig.defaultRulesConfig,
         val outstationWaitHours: Double = 0.0,
-        val outstationWaitRatePerHour: Double = 0.0
+        val outstationWaitRatePerHour: Double = 0.0,
+        val manualDayRentalCcAmount: Double? = null
     )
 
     data class FareLineItem(
@@ -148,18 +152,21 @@ object SangamTariffCalculator {
             SangamTripType.LOCAL_NORMAL -> calculateLocalNormal(
                 category = category,
                 distanceKm = input.distanceKm,
+                waitingMinutes = input.waitingMinutes,
                 isOutsideCity = input.isOutsideCity,
                 isNightTrip = input.isNightTrip,
                 tollCharge = input.tollCharge,
                 permitCharge = input.permitCharge,
                 parkingCharge = input.parkingCharge,
                 customExtrasTotal = input.customExtrasTotal,
+                extraChargeItems = input.extraChargeItems,
                 commissionConfig = input.rulesConfig.localCommissionConfig
             )
 
             SangamTripType.LOCAL_MINIMUM_BILL -> calculateLocalMinimumBill(
                 category = category,
                 distanceKm = input.distanceKm,
+                waitingMinutes = input.waitingMinutes,
                 isOutsideCity = input.isOutsideCity,
                 isNightTrip = input.isNightTrip,
                 fiveKmPolicy = input.rulesConfig.miniSedanFiveKmBoundaryPolicy,
@@ -167,6 +174,7 @@ object SangamTariffCalculator {
                 permitCharge = input.permitCharge,
                 parkingCharge = input.parkingCharge,
                 customExtrasTotal = input.customExtrasTotal,
+                extraChargeItems = input.extraChargeItems,
                 commissionConfig = input.rulesConfig.localCommissionConfig
             )
 
@@ -178,7 +186,8 @@ object SangamTariffCalculator {
                 tollCharge = input.tollCharge,
                 permitCharge = input.permitCharge,
                 parkingCharge = input.parkingCharge,
-                customExtrasTotal = input.customExtrasTotal
+                customExtrasTotal = input.customExtrasTotal,
+                extraChargeItems = input.extraChargeItems
             )
 
             SangamTripType.OUTSTATION_ONE_WAY -> calculateOutstation(
@@ -190,6 +199,7 @@ object SangamTariffCalculator {
                 permitCharge = input.permitCharge,
                 parkingCharge = input.parkingCharge,
                 customExtrasTotal = input.customExtrasTotal,
+                extraChargeItems = input.extraChargeItems,
                 outstationWaitHours = input.outstationWaitHours,
                 outstationWaitRatePerHour = input.outstationWaitRatePerHour
             )
@@ -203,6 +213,7 @@ object SangamTariffCalculator {
                 permitCharge = input.permitCharge,
                 parkingCharge = input.parkingCharge,
                 customExtrasTotal = input.customExtrasTotal,
+                extraChargeItems = input.extraChargeItems,
                 outstationWaitHours = input.outstationWaitHours,
                 outstationWaitRatePerHour = input.outstationWaitRatePerHour
             )
@@ -215,7 +226,9 @@ object SangamTariffCalculator {
                 tollCharge = input.tollCharge,
                 permitCharge = input.permitCharge,
                 parkingCharge = input.parkingCharge,
-                customExtrasTotal = input.customExtrasTotal
+                customExtrasTotal = input.customExtrasTotal,
+                extraChargeItems = input.extraChargeItems,
+                manualCcAmount = input.manualDayRentalCcAmount
             )
         }
     }
@@ -233,7 +246,9 @@ object SangamTariffCalculator {
         permitCharge: Double = 0.0,
         parkingCharge: Double = 0.0,
         customExtrasTotal: Double = 0.0,
-        commissionConfig: LocalCommissionConfig = SangamTariffConfig.defaultRulesConfig.localCommissionConfig
+        commissionConfig: LocalCommissionConfig = SangamTariffConfig.defaultRulesConfig.localCommissionConfig,
+        waitingMinutes: Double = 0.0,
+        extraChargeItems: List<ExtraChargeItem> = emptyList()
     ): SangamSettlementBreakdown {
         val rate = SangamTariffConfig.localNormalRates[category]
             ?: return unsupportedBreakdown(category, SangamTripType.LOCAL_NORMAL, distanceKm)
@@ -253,7 +268,7 @@ object SangamTariffCalculator {
             )
         )
 
-        var tariffSubtotal = rate.initialCharge.add(distCharge)
+        var commissionBaseTariff = rate.initialCharge.add(distCharge)
         if (isOutsideCity) {
             items.add(
                 FareLineItem(
@@ -262,7 +277,7 @@ object SangamTariffCalculator {
                     amount = money(SangamTariffConfig.localOutsideCityCharge)
                 )
             )
-            tariffSubtotal = tariffSubtotal.add(SangamTariffConfig.localOutsideCityCharge)
+            commissionBaseTariff = commissionBaseTariff.add(SangamTariffConfig.localOutsideCityCharge)
         }
         if (isNightTrip) {
             items.add(
@@ -272,22 +287,44 @@ object SangamTariffCalculator {
                     amount = money(SangamTariffConfig.localNightCharge)
                 )
             )
-            tariffSubtotal = tariffSubtotal.add(SangamTariffConfig.localNightCharge)
+            commissionBaseTariff = commissionBaseTariff.add(SangamTariffConfig.localNightCharge)
         }
 
-        tariffSubtotal = money(tariffSubtotal)
-        val (passThroughTotal, passItems) = buildPassThroughExtras(tollCharge, permitCharge, parkingCharge, customExtrasTotal)
+        commissionBaseTariff = money(commissionBaseTariff)
+
+        // Confirmed Rule: Local Normal waiting charge is ₹2/min (pro-rata fractional minutes),
+        // shown as a separate customer line item and kept completely separate from Vendor CC.
+        val waitingCharge = calculateLocalWaitingCharge(waitingMinutes)
+        if (waitingCharge > BigDecimal.ZERO) {
+            items.add(
+                FareLineItem(
+                    label = "Waiting Charge",
+                    detail = formatWaitingMinutesDetail(waitingMinutes),
+                    amount = waitingCharge
+                )
+            )
+        }
+
+        val tariffSubtotalWithWaiting = money(commissionBaseTariff.add(waitingCharge))
+        val (passThroughTotal, passItems) = buildPassThroughExtras(
+            tollCharge = tollCharge,
+            permitCharge = permitCharge,
+            parkingCharge = parkingCharge,
+            customExtrasTotal = customExtrasTotal,
+            extraChargeItems = extraChargeItems
+        )
         items.addAll(passItems)
 
-        val customerTotal = money(tariffSubtotal.add(passThroughTotal))
-        val commissionResult = calculateLocalCommission(distanceKm, tariffSubtotal, commissionConfig)
+        val customerTotal = money(tariffSubtotalWithWaiting.add(passThroughTotal))
+        // Vendor CC is calculated strictly on base tariff subtotal (EXCLUDING customer waiting charge)
+        val commissionResult = calculateLocalCommission(distanceKm, commissionBaseTariff, commissionConfig)
         val driverBalance = computeDriverBalance(customerTotal, commissionResult)
 
         return SangamSettlementBreakdown(
             vehicleCategory = category,
             tripType = SangamTripType.LOCAL_NORMAL,
             distanceKm = distanceKm.coerceAtLeast(0.0),
-            tariffFareBeforePassThrough = tariffSubtotal,
+            tariffFareBeforePassThrough = tariffSubtotalWithWaiting,
             passThroughExtrasTotal = passThroughTotal,
             customerBillTotal = customerTotal,
             lineItems = items,
@@ -310,7 +347,9 @@ object SangamTariffCalculator {
         permitCharge: Double = 0.0,
         parkingCharge: Double = 0.0,
         customExtrasTotal: Double = 0.0,
-        commissionConfig: LocalCommissionConfig = SangamTariffConfig.defaultRulesConfig.localCommissionConfig
+        commissionConfig: LocalCommissionConfig = SangamTariffConfig.defaultRulesConfig.localCommissionConfig,
+        waitingMinutes: Double = 0.0,
+        extraChargeItems: List<ExtraChargeItem> = emptyList()
     ): SangamSettlementBreakdown {
         val config = SangamTariffConfig.localMinimumBillRates[category]
             ?: return unsupportedBreakdown(category, SangamTripType.LOCAL_MINIMUM_BILL, distanceKm)
@@ -409,19 +448,41 @@ object SangamTariffCalculator {
             tariffSubtotal = tariffSubtotal.add(SangamTariffConfig.localNightCharge)
         }
 
-        tariffSubtotal = money(tariffSubtotal)
-        val (passThroughTotal, passItems) = buildPassThroughExtras(tollCharge, permitCharge, parkingCharge, customExtrasTotal)
+        val commissionBaseTariff = money(tariffSubtotal)
+
+        // Confirmed Rule: Local Minimum Bill waiting charge is ₹2/min (pro-rata fractional minutes),
+        // shown as a separate customer line item and kept completely separate from Vendor CC.
+        val waitingCharge = calculateLocalWaitingCharge(waitingMinutes)
+        if (waitingCharge > BigDecimal.ZERO) {
+            items.add(
+                FareLineItem(
+                    label = "Waiting Charge",
+                    detail = formatWaitingMinutesDetail(waitingMinutes),
+                    amount = waitingCharge
+                )
+            )
+        }
+
+        val tariffSubtotalWithWaiting = money(commissionBaseTariff.add(waitingCharge))
+        val (passThroughTotal, passItems) = buildPassThroughExtras(
+            tollCharge = tollCharge,
+            permitCharge = permitCharge,
+            parkingCharge = parkingCharge,
+            customExtrasTotal = customExtrasTotal,
+            extraChargeItems = extraChargeItems
+        )
         items.addAll(passItems)
 
-        val customerTotal = money(tariffSubtotal.add(passThroughTotal))
-        val commissionResult = calculateLocalCommission(distanceKm, tariffSubtotal, commissionConfig)
+        val customerTotal = money(tariffSubtotalWithWaiting.add(passThroughTotal))
+        // Vendor CC is calculated strictly on base tariff subtotal (EXCLUDING customer waiting charge)
+        val commissionResult = calculateLocalCommission(distanceKm, commissionBaseTariff, commissionConfig)
         val driverBalance = computeDriverBalance(customerTotal, commissionResult)
 
         return SangamSettlementBreakdown(
             vehicleCategory = category,
             tripType = SangamTripType.LOCAL_MINIMUM_BILL,
             distanceKm = distanceKm.coerceAtLeast(0.0),
-            tariffFareBeforePassThrough = tariffSubtotal,
+            tariffFareBeforePassThrough = tariffSubtotalWithWaiting,
             passThroughExtrasTotal = passThroughTotal,
             customerBillTotal = customerTotal,
             lineItems = items,
@@ -553,7 +614,8 @@ object SangamTariffCalculator {
         tollCharge: Double = 0.0,
         permitCharge: Double = 0.0,
         parkingCharge: Double = 0.0,
-        customExtrasTotal: Double = 0.0
+        customExtrasTotal: Double = 0.0,
+        extraChargeItems: List<ExtraChargeItem> = emptyList()
     ): SangamSettlementBreakdown {
         val hours = packageHours.coerceAtLeast(1)
         val packageAmount = money(
@@ -584,7 +646,13 @@ object SangamTariffCalculator {
 
         // REQUIREMENT: Hourly Rental NEVER charges waiting time.
         val tariffSubtotal = money(packageAmount.add(extraKmCharge))
-        val (passThroughTotal, passItems) = buildPassThroughExtras(tollCharge, permitCharge, parkingCharge, customExtrasTotal)
+        val (passThroughTotal, passItems) = buildPassThroughExtras(
+            tollCharge = tollCharge,
+            permitCharge = permitCharge,
+            parkingCharge = parkingCharge,
+            customExtrasTotal = customExtrasTotal,
+            extraChargeItems = extraChargeItems
+        )
         items.addAll(passItems)
 
         val customerTotal = money(tariffSubtotal.add(passThroughTotal))
@@ -627,7 +695,8 @@ object SangamTariffCalculator {
         parkingCharge: Double = 0.0,
         customExtrasTotal: Double = 0.0,
         outstationWaitHours: Double = 0.0,
-        outstationWaitRatePerHour: Double = 0.0
+        outstationWaitRatePerHour: Double = 0.0,
+        extraChargeItems: List<ExtraChargeItem> = emptyList()
     ): SangamSettlementBreakdown {
         val outRate = SangamTariffConfig.outstationRates[category]
             ?: return unsupportedBreakdown(
@@ -680,7 +749,13 @@ object SangamTariffCalculator {
         }
 
         tariffSubtotal = money(tariffSubtotal)
-        val (passThroughTotal, passItems) = buildPassThroughExtras(tollCharge, permitCharge, parkingCharge, customExtrasTotal)
+        val (passThroughTotal, passItems) = buildPassThroughExtras(
+            tollCharge = tollCharge,
+            permitCharge = permitCharge,
+            parkingCharge = parkingCharge,
+            customExtrasTotal = customExtrasTotal,
+            extraChargeItems = extraChargeItems
+        )
         items.addAll(passItems)
 
         val customerTotal = money(tariffSubtotal.add(passThroughTotal))
@@ -718,7 +793,9 @@ object SangamTariffCalculator {
         tollCharge: Double = 0.0,
         permitCharge: Double = 0.0,
         parkingCharge: Double = 0.0,
-        customExtrasTotal: Double = 0.0
+        customExtrasTotal: Double = 0.0,
+        extraChargeItems: List<ExtraChargeItem> = emptyList(),
+        manualCcAmount: Double? = null
     ): SangamSettlementBreakdown {
         val useCrysta = category == VehicleCategory.INNOVA && isInnovaCrysta
         val rate = if (useCrysta) {
@@ -752,14 +829,28 @@ object SangamTariffCalculator {
         }
 
         tariffSubtotal = money(tariffSubtotal)
-        val (passThroughTotal, passItems) = buildPassThroughExtras(tollCharge, permitCharge, parkingCharge, customExtrasTotal)
+        val (passThroughTotal, passItems) = buildPassThroughExtras(
+            tollCharge = tollCharge,
+            permitCharge = permitCharge,
+            parkingCharge = parkingCharge,
+            customExtrasTotal = customExtrasTotal,
+            extraChargeItems = extraChargeItems
+        )
         items.addAll(passItems)
 
         val customerTotal = money(tariffSubtotal.add(passThroughTotal))
 
-        val commissionResult = CommissionResult.NotSpecified(
-            reason = "Day Rental commission rate for $catLabel is not specified in the GET TAXI tariff chart — confirmation required."
-        )
+        // Confirmed Rule: Day Rental CC is variable / managed manually per trip (NO fixed %)
+        val commissionResult = if (manualCcAmount != null && manualCcAmount >= 0.0) {
+            CommissionResult.Confirmed(
+                ruleLabel = "Day Rental CC (Manual)",
+                amount = money(bd(manualCcAmount))
+            )
+        } else {
+            CommissionResult.NotSpecified(
+                reason = "Day Rental CC for $catLabel is variable and managed manually per trip (no fixed percentage)."
+            )
+        }
         val driverBalance = computeDriverBalance(customerTotal, commissionResult)
 
         return SangamSettlementBreakdown(
@@ -780,11 +871,31 @@ object SangamTariffCalculator {
     // HELPERS
     // =========================================================================
 
+    private fun calculateLocalWaitingCharge(waitingMinutes: Double): BigDecimal {
+        val safeMinutes = waitingMinutes.coerceAtLeast(0.0)
+        if (safeMinutes <= 0.0) return money(BigDecimal.ZERO)
+        return money(bd(safeMinutes).multiply(SangamTariffConfig.localWaitingRatePerMin))
+    }
+
+    private fun formatWaitingMinutesDetail(waitingMinutes: Double): String {
+        val safeMinutes = waitingMinutes.coerceAtLeast(0.0)
+        val totalSeconds = (safeMinutes * 60.0).roundToLong()
+        val mins = totalSeconds / 60L
+        val secs = totalSeconds % 60L
+        val rateInt = SangamTariffConfig.localWaitingRatePerMin.toInt()
+        return if (secs == 0L) {
+            "$mins min × ₹$rateInt/min"
+        } else {
+            "${mins}m ${secs}s (${String.format(java.util.Locale.US, "%.2f", safeMinutes)} min) × ₹$rateInt/min"
+        }
+    }
+
     private fun buildPassThroughExtras(
         tollCharge: Double,
         permitCharge: Double,
         parkingCharge: Double,
-        customExtrasTotal: Double
+        customExtrasTotal: Double,
+        extraChargeItems: List<ExtraChargeItem> = emptyList()
     ): Pair<BigDecimal, List<FareLineItem>> {
         val passItems = mutableListOf<FareLineItem>()
         var total = BigDecimal.ZERO
@@ -804,7 +915,43 @@ object SangamTariffCalculator {
             total = total.add(amt)
             passItems.add(FareLineItem("Parking Charges", "Pass-through customer expense", amt, isPassThrough = true))
         }
-        if (customExtrasTotal > 0.0) {
+
+        val validExtraItems = extraChargeItems.filter { it.amount > 0.0 }
+        if (validExtraItems.isNotEmpty()) {
+            validExtraItems.forEach { item ->
+                val amt = money(bd(item.amount))
+                total = total.add(amt)
+                val cleanLabel = item.label.trim()
+                val isWaitingItem = cleanLabel.startsWith("Additional Waiting", ignoreCase = true) ||
+                    cleanLabel.contains("Waiting", ignoreCase = true)
+                if (isWaitingItem) {
+                    val detailText = cleanLabel
+                        .replace(Regex("(?i)^Additional\\s+Waiting\\s*"), "")
+                        .trim()
+                        .removePrefix("(")
+                        .removeSuffix(")")
+                        .trim()
+                        .ifBlank { "Manual additional waiting" }
+                    passItems.add(
+                        FareLineItem(
+                            label = "Additional Waiting",
+                            detail = detailText,
+                            amount = amt,
+                            isPassThrough = true
+                        )
+                    )
+                } else {
+                    passItems.add(
+                        FareLineItem(
+                            label = cleanLabel.ifBlank { "Additional Charge" },
+                            detail = "Pass-through customer expense",
+                            amount = amt,
+                            isPassThrough = true
+                        )
+                    )
+                }
+            }
+        } else if (customExtrasTotal > 0.0) {
             val amt = money(bd(customExtrasTotal))
             total = total.add(amt)
             passItems.add(FareLineItem("Additional Charges", "Pass-through customer expense", amt, isPassThrough = true))

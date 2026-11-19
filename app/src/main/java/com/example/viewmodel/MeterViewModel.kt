@@ -242,6 +242,13 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             _hasActiveSessionBackup.value = backup != null
             if (backup != null) {
                 _selectedServiceType.value = ServiceType.fromId(backup.serviceType)
+                _selectedVehicleCategory.value = VehicleCategory.fromId(backup.vehicleCategoryId)
+                _selectedSangamTripType.value = SangamTripType.fromId(backup.sangamTripTypeId)
+                _isInnovaCrysta.value = backup.isInnovaCrysta
+                _isOutsideCity.value = backup.isOutOfCity
+                _isNightTrip.value = backup.isNightTrip
+                _over12Hours.value = backup.over12Hours
+                _packageHours.value = backup.packageHours.coerceIn(1, 12)
             }
             Log.d("MeterViewModel", "Checked active session backup: ${backup != null}")
         }
@@ -292,11 +299,20 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
 
             _tariffValidationMessage.value = null
 
+            val waitRateVal = if (
+                tripType == SangamTripType.LOCAL_NORMAL ||
+                tripType == SangamTripType.LOCAL_MINIMUM_BILL
+            ) {
+                SangamTariffConfig.localWaitingRatePerMin.toDouble()
+            } else {
+                0.0
+            }
+
             LocationTrackingService.startTrip(
                 context = getApplication(),
                 baseFare = baseVal,
                 farePerKm = perKmVal,
-                waitFarePerMin = 0.0,
+                waitFarePerMin = waitRateVal,
                 currency = currencyVal,
                 speedThreshold = thresholdVal,
                 serviceType = mappedServiceType,
@@ -413,7 +429,11 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             if (input.tollCharge > 0.0) extras.add(ExtraChargeItem(label = "Toll", amount = input.tollCharge))
             if (input.permitCharge > 0.0) extras.add(ExtraChargeItem(label = "Permit", amount = input.permitCharge))
             if (input.parkingCharge > 0.0) extras.add(ExtraChargeItem(label = "Parking", amount = input.parkingCharge))
-            if (input.customExtrasTotal > 0.0) extras.add(ExtraChargeItem(label = "Extra Charges", amount = input.customExtrasTotal))
+            if (input.extraChargeItems.isNotEmpty()) {
+                extras.addAll(input.extraChargeItems.filter { it.amount > 0.0 })
+            } else if (input.customExtrasTotal > 0.0) {
+                extras.add(ExtraChargeItem(label = "Extra Charges", amount = input.customExtrasTotal))
+            }
 
             val durationSec = when {
                 durationMinutes > 0L -> durationMinutes * 60L
@@ -487,7 +507,14 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             outOfCitySurcharge = if (input.isOutsideCity) SangamTariffConfig.localOutsideCityCharge.toDouble() else 0.0,
             baseFare = breakdown.lineItems.firstOrNull()?.amount?.toDouble() ?: 0.0,
             farePerKm = 0.0,
-            waitFarePerMin = 0.0,
+            waitFarePerMin = if (
+                input.tripType == SangamTripType.LOCAL_NORMAL ||
+                input.tripType == SangamTripType.LOCAL_MINIMUM_BILL
+            ) {
+                SangamTariffConfig.localWaitingRatePerMin.toDouble()
+            } else {
+                0.0
+            },
             currency = SangamTariffConfig.CURRENCY_SYMBOL,
             serviceType = mappedMode,
             rentalBaseHours = input.packageHours.toDouble(),
@@ -622,6 +649,70 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
                 tripRepository.updateTripSettlementStatus(tripId, status)
             } catch (e: Exception) {
                 Log.e("MeterViewModel", "Failed updating settlement status for trip $tripId", e)
+            }
+        }
+    }
+
+    /**
+     * Manually sets or updates the variable Day Rental Company Commission (CC) for a trip.
+     * Persists CC & recomputed Driver Net Balance in Room WITHOUT altering Customer Invoice fare or line items.
+     */
+    fun updateManualDayRentalCc(tripId: Int, manualCcAmount: Double) {
+        if (manualCcAmount < 0.0 || manualCcAmount.isNaN() || manualCcAmount.isInfinite()) return
+        val ccBd = java.math.BigDecimal.valueOf(manualCcAmount)
+            .setScale(2, java.math.RoundingMode.HALF_UP)
+        val ruleLabel = "Day Rental CC (Manual)"
+
+        val current = currentSettlement.value
+        if (current != null && (tripId <= 0 || current.tripEntity.id == tripId)) {
+            val customerTotalBd = current.breakdown.customerBillTotal
+                .setScale(2, java.math.RoundingMode.HALF_UP)
+            val netDriverBd = customerTotalBd.subtract(ccBd)
+                .coerceAtLeast(java.math.BigDecimal.ZERO)
+                .setScale(2, java.math.RoundingMode.HALF_UP)
+
+            val updatedBreakdown = current.breakdown.copy(
+                commissionResult = SangamTariffCalculator.CommissionResult.Confirmed(
+                    ruleLabel = ruleLabel,
+                    amount = ccBd
+                ),
+                driverBalanceStatus = SangamTariffCalculator.DriverBalanceStatus.Confirmed(netDriverBd)
+            )
+            val updatedEntity = current.tripEntity.copy(
+                ccStatus = com.example.util.TripSnapshotMapper.CC_STATUS_CONFIRMED,
+                ccRuleLabel = ruleLabel,
+                ccAmount = ccBd.toDouble(),
+                ccMinAmount = ccBd.toDouble(),
+                ccMaxAmount = ccBd.toDouble(),
+                driverNetBalance = netDriverBd.toDouble(),
+                driverBalanceMin = netDriverBd.toDouble(),
+                driverBalanceMax = netDriverBd.toDouble()
+            )
+            _manualSettlement.value = current.copy(
+                tripEntity = updatedEntity,
+                breakdown = updatedBreakdown
+            )
+        }
+
+        if (tripId > 0) {
+            viewModelScope.launch {
+                try {
+                    val savedTrip = tripRepository.getTripById(tripId) ?: return@launch
+                    val customerTotalBd = java.math.BigDecimal.valueOf(savedTrip.totalFare)
+                        .setScale(2, java.math.RoundingMode.HALF_UP)
+                    val netDriverBd = customerTotalBd.subtract(ccBd)
+                        .coerceAtLeast(java.math.BigDecimal.ZERO)
+                        .setScale(2, java.math.RoundingMode.HALF_UP)
+                    tripRepository.updateTripManualCc(
+                        tripId = tripId,
+                        ccStatus = com.example.util.TripSnapshotMapper.CC_STATUS_CONFIRMED,
+                        ccRuleLabel = ruleLabel,
+                        ccAmount = ccBd.toDouble(),
+                        driverNetBalance = netDriverBd.toDouble()
+                    )
+                } catch (e: Exception) {
+                    Log.e("MeterViewModel", "Failed updating manual Day Rental CC for trip $tripId", e)
+                }
             }
         }
     }

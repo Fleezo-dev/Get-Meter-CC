@@ -705,8 +705,93 @@ fun TripSettlementScreen(
                         }
 
                         is SangamTariffCalculator.CommissionResult.NotSpecified -> {
-                            StatusTag(text = "NOT SPECIFIED IN CHART", bg = Color(0xFF451A03), fg = SettleAmber)
+                            val tagLabel = if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) {
+                                "VARIABLE / MANUAL CC"
+                            } else {
+                                "NOT SPECIFIED IN CHART"
+                            }
+                            StatusTag(text = tagLabel, bg = Color(0xFF451A03), fg = SettleAmber)
                             Text(text = comm.reason, color = SettleWhite, fontSize = 12.sp, lineHeight = 16.sp)
+                        }
+                    }
+
+                    if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) {
+                        var manualCcInput by remember(trip.tripNumber, trip.ccAmount, trip.ccStatus) {
+                            mutableStateOf(
+                                if (breakdown.commissionResult is SangamTariffCalculator.CommissionResult.Confirmed) {
+                                    String.format(Locale.US, "%.2f", breakdown.commissionResult.amount.toDouble())
+                                } else {
+                                    ""
+                                }
+                            )
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(SettleBlack, RoundedCornerShape(14.dp))
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "DAY RENTAL CC (VARIABLE / MANUAL)",
+                                color = SettleYellow,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.8.sp
+                            )
+                            Text(
+                                text = "No fixed percentage applies to Day Rental. Enter the applicable CC amount for this trip (Driver Settlement only; Customer Bill stays unchanged).",
+                                color = SettleMuted,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = manualCcInput,
+                                    onValueChange = { manualCcInput = it },
+                                    label = { Text("CC Amount (₹)") },
+                                    placeholder = { Text("e.g. 250") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    colors = settleFieldColors(),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("day_rental_manual_cc_input")
+                                )
+                                Button(
+                                    onClick = {
+                                        val parsed = manualCcInput.trim().toDoubleOrNull()
+                                        if (parsed != null && parsed >= 0.0) {
+                                            viewModel.updateManualDayRentalCc(trip.id, parsed)
+                                            Toast.makeText(
+                                                context,
+                                                "Manual Day Rental CC saved (Customer Bill unchanged)",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Enter a valid CC amount (₹0 or more)",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = SettleYellow,
+                                        contentColor = SettleBlack
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .height(52.dp)
+                                        .testTag("save_day_rental_cc_button")
+                                ) {
+                                    Text("SAVE CC", fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                }
+                            }
                         }
                     }
 

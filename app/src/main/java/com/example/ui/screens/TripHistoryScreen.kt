@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -266,7 +268,9 @@ private fun TripHistoryCard(
                 val ccValueText = when (val cc = breakdown.commissionResult) {
                     is SangamTariffCalculator.CommissionResult.Confirmed -> SangamTariffCalculator.formatRupees(cc.amount)
                     is SangamTariffCalculator.CommissionResult.NeedsConfirmation -> "Confirm"
-                    is SangamTariffCalculator.CommissionResult.NotSpecified -> "N/A"
+                    is SangamTariffCalculator.CommissionResult.NotSpecified -> {
+                        if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) "Manual" else "N/A"
+                    }
                 }
                 HistoryAmountColumn(
                     label = "APPROVED CC",
@@ -559,7 +563,10 @@ fun TripHistoryDetailScreen(
                         }
                         is SangamTariffCalculator.CommissionResult.NotSpecified -> {
                             DetailRow("Saved CC Rule", cc.reason)
-                            DetailRow("Saved CC Amount", "Not Specified")
+                            DetailRow(
+                                "Saved CC Amount",
+                                if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) "Variable / Manual" else "Not Specified"
+                            )
                         }
                     }
 
@@ -569,6 +576,88 @@ fun TripHistoryDetailScreen(
                     }
                     DetailRow("Saved Driver Net Balance", netBal)
                     DetailRow("GET TAXI GPay", SangamTariffConfig.VENDOR_GPAY_NUMBER)
+
+                    if (breakdown.tripType == SangamTariffConfig.SangamTripType.DAY_RENTAL) {
+                        var historyManualCc by remember(record.id, record.ccAmount, record.ccStatus) {
+                            mutableStateOf(
+                                if (breakdown.commissionResult is SangamTariffCalculator.CommissionResult.Confirmed) {
+                                    String.format(Locale.US, "%.2f", breakdown.commissionResult.amount.toDouble())
+                                } else {
+                                    ""
+                                }
+                            )
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(HistBlack, RoundedCornerShape(14.dp))
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "UPDATE MANUAL DAY RENTAL CC",
+                                color = HistYellow,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.8.sp
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = historyManualCc,
+                                    onValueChange = { historyManualCc = it },
+                                    label = { Text("CC Amount (₹)") },
+                                    placeholder = { Text("e.g. 250") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = HistYellow,
+                                        unfocusedBorderColor = HistBorder,
+                                        focusedLabelColor = HistYellow,
+                                        unfocusedLabelColor = HistMuted,
+                                        focusedTextColor = HistWhite,
+                                        unfocusedTextColor = HistWhite,
+                                        cursorColor = HistYellow
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("history_day_rental_cc_input")
+                                )
+                                Button(
+                                    onClick = {
+                                        val parsed = historyManualCc.trim().toDoubleOrNull()
+                                        if (parsed != null && parsed >= 0.0) {
+                                            viewModel.updateManualDayRentalCc(record.id, parsed)
+                                            Toast.makeText(
+                                                context,
+                                                "Manual Day Rental CC saved",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Enter a valid CC amount (₹0 or more)",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = HistYellow,
+                                        contentColor = HistBlack
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .height(52.dp)
+                                        .testTag("history_save_day_rental_cc_button")
+                                ) {
+                                    Text("SAVE CC", fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

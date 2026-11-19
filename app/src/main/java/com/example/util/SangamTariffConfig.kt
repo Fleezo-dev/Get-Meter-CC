@@ -139,6 +139,7 @@ object SangamTariffConfig {
 
     val localOutsideCityCharge: BigDecimal = BigDecimal("80")
     val localNightCharge: BigDecimal = BigDecimal("50") // 11 PM – 6 AM
+    val localWaitingRatePerMin: BigDecimal = BigDecimal("2") // Confirmed ₹2/min for Local Normal & Local Min Bill
 
     data class LocalMinimumBillConfig(
         val firstSlabMaxKm: BigDecimal,

@@ -15,7 +15,7 @@ import com.example.util.VendorLogoRenderer
         ActiveTripRecord::class,
         VendorProfileEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class TripDatabase : RoomDatabase() {
@@ -209,6 +209,17 @@ abstract class TripDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN vehicleCategoryId TEXT NOT NULL DEFAULT 'MINI'") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN sangamTripTypeId TEXT NOT NULL DEFAULT 'LOCAL_NORMAL'") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN isInnovaCrysta INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN isNightTrip INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN over12Hours INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE active_trip ADD COLUMN packageHours INTEGER NOT NULL DEFAULT 1") } catch (_: Exception) {}
+            }
+        }
+
         fun seedDefaultVendorsSql(db: SupportSQLiteDatabase) {
             try {
                 val now = System.currentTimeMillis()
@@ -257,7 +268,8 @@ abstract class TripDatabase : RoomDatabase() {
                         MIGRATION_7_8,
                         MIGRATION_8_9,
                         MIGRATION_9_10,
-                        MIGRATION_10_11
+                        MIGRATION_10_11,
+                        MIGRATION_11_12
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
