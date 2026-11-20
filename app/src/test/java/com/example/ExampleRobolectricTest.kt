@@ -834,5 +834,108 @@ class ExampleRobolectricTest {
         assertEquals(30.0, resetBack.outstationPerKmRate, 0.001)
         assertEquals(2.0, resetBack.waitingChargePerMin, 0.001)
     }
+
+    @Test
+    fun `verify active_meter_bg raw video resource exists, is non-empty, and has valid faststart MP4 header`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val header = ByteArray(128)
+        var totalBytes = 0L
+        context.resources.openRawResource(R.raw.active_meter_bg).use { input ->
+            val readHeader = input.read(header)
+            assertTrue("MP4 header must be at least 16 bytes", readHeader >= 16)
+            totalBytes += readHeader
+            val buf = ByteArray(8192)
+            while (true) {
+                val n = input.read(buf)
+                if (n <= 0) break
+                totalBytes += n
+            }
+        }
+        // Real multi-scene H.264 854x480 video must be substantial (not a stub) and compact (< 8 MB)
+        assertTrue("Expected real bundled video > 200 KB, got $totalBytes bytes", totalBytes > 200_000L)
+        assertTrue("Expected compact bundled video < 8 MB, got $totalBytes bytes", totalBytes < 8_000_000L)
+        // ISO BMFF MP4 container signature: bytes [4..7] == "ftyp"
+        val ftyp = String(header, 4, 4, Charsets.US_ASCII)
+        assertEquals("MP4 file must start with ftyp box", "ftyp", ftyp)
+    }
+
+    @Test
+    fun `verify switching Live Meter to Live Map and back preserves active trip values without reset`() = kotlinx.coroutines.runBlocking {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val db = TripDatabase.getDatabase(app)
+        val dao = db.tripDao()
+
+        // Seed an in-progress active trip in Room and recover via LocationTrackingService
+        val activeTripNumber = "GTM-20261119-MAPRET01"
+        dao.saveActiveTrip(
+            com.example.data.database.ActiveTripRecord(
+                tripNumber = activeTripNumber,
+                startTime = System.currentTimeMillis() - 600_000L,
+                distanceKm = 7.45,
+                durationSeconds = 600L,
+                waitingSeconds = 180L,
+                currentFare = 294.60,
+                isPaused = false,
+                baseFare = 80.0,
+                farePerKm = 28.0,
+                waitFarePerMin = 2.0,
+                currency = "₹",
+                vehicleCategoryId = com.example.util.SangamTariffConfig.VehicleCategory.MINI.id,
+                sangamTripTypeId = com.example.util.SangamTariffConfig.SangamTripType.LOCAL_NORMAL.id
+            )
+        )
+
+        val recoverIntent = android.content.Intent(app, LocationTrackingService::class.java).apply {
+            action = "RECOVER"
+        }
+        val serviceController = Robolectric.buildService(LocationTrackingService::class.java, recoverIntent)
+            .create()
+            .startCommand(0, 0)
+
+        val mainLooper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+        repeat(40) {
+            mainLooper.idle()
+            if (LocationTrackingService.tripState.value.tripNumber == activeTripNumber) return@repeat
+            Thread.sleep(25)
+        }
+        mainLooper.idle()
+
+        val viewModel = MeterViewModel(app)
+        val beforeSwitch = viewModel.tripState.value
+        assertEquals(activeTripNumber, beforeSwitch.tripNumber)
+        assertEquals(TripStatus.RUNNING, beforeSwitch.status)
+        assertEquals(7.45, beforeSwitch.distanceKm, 0.001)
+        assertTrue(beforeSwitch.durationSeconds >= 600L)
+        assertEquals(180L, beforeSwitch.waitingSeconds)
+        assertTrue(beforeSwitch.currentFare >= 290.0)
+
+        // Toggle Live Meter -> Live Map -> Live Meter repeatedly
+        assertEquals(ActiveTripDisplayMode.METER_DETAILS, viewModel.activeTripDisplayMode.value)
+        viewModel.showMapDisplay()
+        assertEquals(ActiveTripDisplayMode.MAP_FIRST, viewModel.activeTripDisplayMode.value)
+
+        val onMapState = viewModel.tripState.value
+        assertEquals(beforeSwitch.tripNumber, onMapState.tripNumber)
+        assertEquals(beforeSwitch.distanceKm, onMapState.distanceKm, 0.0001)
+        assertEquals(beforeSwitch.currentFare, onMapState.currentFare, 0.0001)
+        assertEquals(beforeSwitch.waitingSeconds, onMapState.waitingSeconds)
+
+        viewModel.showMeterDetails()
+        assertEquals(ActiveTripDisplayMode.METER_DETAILS, viewModel.activeTripDisplayMode.value)
+
+        val afterReturn = viewModel.tripState.value
+        assertEquals(beforeSwitch.tripNumber, afterReturn.tripNumber)
+        assertEquals(beforeSwitch.status, afterReturn.status)
+        assertEquals(beforeSwitch.distanceKm, afterReturn.distanceKm, 0.0001)
+        assertEquals(beforeSwitch.currentFare, afterReturn.currentFare, 0.0001)
+        assertEquals(beforeSwitch.waitingSeconds, afterReturn.waitingSeconds)
+        assertTrue(afterReturn.durationSeconds >= beforeSwitch.durationSeconds)
+
+        // Clean up service & active trip record so other tests start clean
+        dao.clearActiveTrip()
+        serviceController.destroy()
+        Unit
+    }
 }
+
 

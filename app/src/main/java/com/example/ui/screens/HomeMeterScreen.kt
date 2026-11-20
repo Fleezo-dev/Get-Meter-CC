@@ -296,234 +296,170 @@ fun HomeMeterScreen(
         },
         containerColor = colors.background
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-            if (!isTripActive) {
-                BatteryOptimizationCard()
-
-                if (hasBackup && tripState.status == TripStatus.IDLE) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
-                        shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(1.dp, colors.yellowHighlight),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = strings.unfinishedRideDetected,
-                                color = colors.yellowText,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 15.sp
-                            )
-                            Text(
-                                text = strings.unfinishedRideDesc,
-                                color = colors.textPrimary,
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                OutlinedButton(
-                                    onClick = { viewModel.discardBackup() },
-                                    modifier = Modifier.weight(1f).height(48.dp)
-                                ) {
-                                    Text(strings.discard, color = colors.textSecondary, fontWeight = FontWeight.Bold)
-                                }
-                                Button(
-                                    onClick = { viewModel.recoverTrip() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
-                                    modifier = Modifier.weight(1.4f).height(48.dp)
-                                ) {
-                                    Text(strings.resumeRide, fontWeight = FontWeight.Black)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (validationMessage != null) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, HudAmber),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(validationMessage!!, color = colors.textPrimary, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { viewModel.clearValidationMessage() }) {
-                                Icon(Icons.Default.Close, contentDescription = strings.close, tint = HudAmber)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // GPS + Connected-First Status & Taxi Meter Vacant/Occupied Header
-            Row(
+        if (isTripActive && activeTripDisplayMode == ActiveTripDisplayMode.METER_DETAILS) {
+            // Responsive Active Live Meter Dashboard — eliminates unused bottom blank space across screen sizes
+            BoxWithConstraints(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(innerPadding)
+                    .fillMaxSize()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    Box(
+                val minHeightForFill = if (tripState.needsDistanceVerification) 790.dp else 660.dp
+                val isCompactViewport = maxHeight < minHeightForFill
+                val containerModifier = if (isCompactViewport) {
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 4.dp, bottom = 12.dp)
+                } else {
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 4.dp, bottom = 10.dp)
+                }
+
+                Column(
+                    modifier = containerModifier,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // 1. Compact GPS + Connected-First Status & Occupied/Paused Header
+                    Row(
                         modifier = Modifier
-                            .size(10.dp)
-                            .background(
-                                color = if (tripState.latitude != null) colors.greenSuccess else HudAmber,
-                                shape = CircleShape
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(
+                                        color = if (tripState.latitude != null) colors.greenSuccess else HudAmber,
+                                        shape = CircleShape
+                                    )
                             )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = if (tripState.latitude != null) strings.gpsSignalStrong else strings.acquiringGps,
-                            color = colors.textPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        val netBadge = if (connectivityStatus.isNetworkConnected) {
-                            "Online (${connectivityStatus.transportLabel})"
-                        } else {
-                            "Local Storage Ready"
-                        }
-                        Text(
-                            text = "GET TAXI – Smart Taxi Meter • $netBadge",
-                            color = colors.textSecondary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                Surface(
-                    color = when (tripState.status) {
-                        TripStatus.RUNNING -> colors.primaryAccent
-                        TripStatus.PAUSED -> colors.yellowContainer
-                        else -> colors.surface
-                    },
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(
-                        1.dp,
-                        when (tripState.status) {
-                            TripStatus.RUNNING -> colors.primaryAccent
-                            TripStatus.PAUSED -> HudAmber
-                            else -> colors.border
-                        }
-                    ),
-                    modifier = Modifier.testTag("trip_status_badge")
-                ) {
-                    Text(
-                        text = when (tripState.status) {
-                            TripStatus.RUNNING -> strings.occupied.uppercase(Locale.US)
-                            TripStatus.PAUSED -> strings.paused.uppercase(Locale.US)
-                            else -> strings.vacant.uppercase(Locale.US)
-                        },
-                        color = when (tripState.status) {
-                            TripStatus.RUNNING -> colors.onPrimaryAccent
-                            TripStatus.PAUSED -> HudAmber
-                            else -> colors.textPrimary
-                        },
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                    )
-                }
-            }
-
-            // Explicit Auditable GPS Interruption Gap Banner (Never fabricates unmeasured distance!)
-            if (isTripActive && tripState.needsDistanceVerification) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, HudAmber),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .testTag("gps_gap_verification_banner")
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "GPS Interruption Gap Detected (${tripState.unverifiedGapSeconds}s)",
-                            color = colors.textPrimary,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = "Saved GPS distance preserved without fabricating missing km. Straight-line ref: ${String.format(Locale.US, "%.2f", tripState.unverifiedGapStraightLineKm)} km.",
-                            color = colors.textSecondary,
-                            fontSize = 11.sp
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                onClick = { viewModel.dismissGapWarning() },
-                                modifier = Modifier.weight(1f).height(40.dp)
-                            ) {
-                                Text("Keep Recorded KM", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Button(
-                                onClick = { showGapAdjustDialog = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
-                                modifier = Modifier.weight(1f).height(40.dp)
-                            ) {
-                                Text("Verify / Add KM", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = if (tripState.latitude != null) strings.gpsSignalStrong else strings.acquiringGps,
+                                    color = colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                val netBadge = if (connectivityStatus.isNetworkConnected) {
+                                    "Online (${connectivityStatus.transportLabel})"
+                                } else {
+                                    "Local Storage Ready"
+                                }
+                                Text(
+                                    text = "GET TAXI – Smart Taxi Meter • $netBadge",
+                                    color = colors.textSecondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
-                    }
-                }
-            }
 
-            if (isTripActive && activeTripDisplayMode == ActiveTripDisplayMode.MAP_FIRST) {
-                TripMapView(
-                    tripState = tripState,
-                    isNavigationConsoleMode = true,
-                    isExpanded = false,
-                    onToggleExpand = { isMapExpanded = true },
-                    onOpenMeterDetails = { viewModel.showMeterDetails() },
-                    onPauseTrip = { viewModel.pauseTrip() },
-                    onResumeTrip = { viewModel.resumeTrip() },
-                    onEndTrip = {
-                        viewModel.completeTripForSettlement { onNavigateToSettlement() }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(520.dp)
-                        .testTag("active_trip_enlarged_map")
-                )
-            } else {
-                if (isTripActive && activeTripDisplayMode == ActiveTripDisplayMode.METER_DETAILS) {
-                    // Upgraded Active Meter Dashboard with looping background MP4 + route motion
+                        Surface(
+                            color = when (tripState.status) {
+                                TripStatus.RUNNING -> colors.primaryAccent
+                                TripStatus.PAUSED -> colors.yellowContainer
+                                else -> colors.surface
+                            },
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                when (tripState.status) {
+                                    TripStatus.RUNNING -> colors.primaryAccent
+                                    TripStatus.PAUSED -> HudAmber
+                                    else -> colors.border
+                                }
+                            ),
+                            modifier = Modifier.testTag("trip_status_badge")
+                        ) {
+                            Text(
+                                text = when (tripState.status) {
+                                    TripStatus.RUNNING -> strings.occupied.uppercase(Locale.US)
+                                    TripStatus.PAUSED -> strings.paused.uppercase(Locale.US)
+                                    else -> strings.vacant.uppercase(Locale.US)
+                                },
+                                color = when (tripState.status) {
+                                    TripStatus.RUNNING -> colors.onPrimaryAccent
+                                    TripStatus.PAUSED -> HudAmber
+                                    else -> colors.textPrimary
+                                },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+
+                    // 2. Auditable GPS Interruption Gap Banner (only shown if GPS gap occurred)
+                    if (tripState.needsDistanceVerification) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, HudAmber),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("gps_gap_verification_banner")
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "GPS Interruption Gap Detected (${tripState.unverifiedGapSeconds}s)",
+                                    color = colors.textPrimary,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = "Saved GPS distance preserved without fabricating missing km. Straight-line ref: ${String.format(Locale.US, "%.2f", tripState.unverifiedGapStraightLineKm)} km.",
+                                    color = colors.textSecondary,
+                                    fontSize = 11.sp
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.dismissGapWarning() },
+                                        modifier = Modifier.weight(1f).height(40.dp)
+                                    ) {
+                                        Text("Keep Recorded KM", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = { showGapAdjustDialog = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                                        modifier = Modifier.weight(1f).height(40.dp)
+                                    ) {
+                                        Text("Verify / Add KM", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Upper Live Driving Video Dashboard — absorbs available screen height dynamically
+                    val videoModifier = if (isCompactViewport) {
+                        Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .testTag("active_meter_video_dashboard")
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .heightIn(min = 210.dp)
+                            .testTag("active_meter_video_dashboard")
+                    }
                     ActiveMeterDashboardBackground(
                         distanceKm = tripState.distanceKm,
                         durationSeconds = tripState.durationSeconds,
                         speedKmH = tripState.speedKmH,
                         isPaused = tripState.status == TripStatus.PAUSED,
                         isDirectMeter = tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT,
-                        modifier = Modifier
-                            .padding(vertical = 4.dp)
-                            .testTag("active_meter_video_dashboard")
+                        modifier = videoModifier
                     )
 
+                    // 4. Back to Live Map Button (preserves exact trip state without reset)
                     OutlinedButton(
                         onClick = { viewModel.showMapDisplay() },
                         colors = ButtonDefaults.outlinedButtonColors(containerColor = colors.surface, contentColor = colors.primaryAccent),
@@ -531,7 +467,6 @@ fun HomeMeterScreen(
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
                             .height(48.dp)
                             .testTag("return_to_map_button")
                     ) {
@@ -539,6 +474,301 @@ fun HomeMeterScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(strings.returnToMapButton, fontSize = 13.sp, fontWeight = FontWeight.Black)
                     }
+
+                    // 5. Prominent, Unstretched Commercial Fare & Telemetry Panel
+                    CommercialMeterGaugeCard(
+                        tripState = tripState,
+                        activeTripType = SangamTripType.fromId(tripState.sangamTripTypeId),
+                        onOpenExtras = { showExtraChargesDialog = true }
+                    )
+
+                    // 6. Active Trip Mode / Category Pill
+                    val isDirectActive = tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT
+                    val activeModeTitle = if (isDirectActive) {
+                        val dCat = SangamTariffConfig.DirectMeterCategory.fromId(tripState.directCategoryId)
+                        "DIRECT METER • ${dCat.displayName}"
+                    } else {
+                        val activeCat = SangamTariffConfig.VehicleCategory.fromId(tripState.vehicleCategoryId)
+                        val activeMode = SangamTripType.fromId(tripState.sangamTripTypeId)
+                        val activeCatLabel = if (tripState.isInnovaCrysta) "INNOVA CRYSTA" else activeCat.displayName
+                        "$activeCatLabel • ${activeMode.displayName}"
+                    }
+                    Surface(
+                        color = colors.surface,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, colors.border),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("active_trip_mode_badge")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.LocalTaxi,
+                                    contentDescription = null,
+                                    tint = colors.primaryAccent,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = activeModeTitle,
+                                    color = colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                            Text(
+                                text = if (isDirectActive) "NO CC" else "TRIP ACTIVE",
+                                color = colors.yellowText,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+
+                    // 7. Ergonomic Bottom Pause / Resume & End & Settle Controls
+                    MeterActionControls(
+                        status = tripState.status,
+                        isDirectMode = isDirectActive,
+                        onStartDirectTrip = { viewModel.startDirectMeterTrip(selectedDirectCategory) },
+                        onStartTrip = { viewModel.startTrip() },
+                        onOpenStartWithOtp = {
+                            otpInput = ""
+                            otpErrorMsg = null
+                            showOtpDialog = true
+                        },
+                        onOpenParkedCalculator = { showQuickCalculatorDialog = true },
+                        onPauseTrip = { viewModel.pauseTrip() },
+                        onResumeTrip = { viewModel.resumeTrip() },
+                        onEndTrip = { viewModel.completeTripForSettlement { onNavigateToSettlement() } }
+                    )
+
+                    // 8. Compact Bottom Creator Signature
+                    CreatorSignatureBanner(testTag = "home_creator_credit_banner")
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+            ) {
+                if (!isTripActive) {
+                    BatteryOptimizationCard()
+
+                    if (hasBackup && tripState.status == TripStatus.IDLE) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
+                            shape = RoundedCornerShape(18.dp),
+                            border = BorderStroke(1.dp, colors.yellowHighlight),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = strings.unfinishedRideDetected,
+                                    color = colors.yellowText,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = strings.unfinishedRideDesc,
+                                    color = colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.discardBackup() },
+                                        modifier = Modifier.weight(1f).height(48.dp)
+                                    ) {
+                                        Text(strings.discard, color = colors.textSecondary, fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = { viewModel.recoverTrip() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                                        modifier = Modifier.weight(1.4f).height(48.dp)
+                                    ) {
+                                        Text(strings.resumeRide, fontWeight = FontWeight.Black)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (validationMessage != null) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, HudAmber),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(validationMessage!!, color = colors.textPrimary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                IconButton(onClick = { viewModel.clearValidationMessage() }) {
+                                    Icon(Icons.Default.Close, contentDescription = strings.close, tint = HudAmber)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // GPS + Connected-First Status & Taxi Meter Vacant/Occupied Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(
+                                    color = if (tripState.latitude != null) colors.greenSuccess else HudAmber,
+                                    shape = CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = if (tripState.latitude != null) strings.gpsSignalStrong else strings.acquiringGps,
+                                color = colors.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val netBadge = if (connectivityStatus.isNetworkConnected) {
+                                "Online (${connectivityStatus.transportLabel})"
+                            } else {
+                                "Local Storage Ready"
+                            }
+                            Text(
+                                text = "GET TAXI – Smart Taxi Meter • $netBadge",
+                                color = colors.textSecondary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = when (tripState.status) {
+                            TripStatus.RUNNING -> colors.primaryAccent
+                            TripStatus.PAUSED -> colors.yellowContainer
+                            else -> colors.surface
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            when (tripState.status) {
+                                TripStatus.RUNNING -> colors.primaryAccent
+                                TripStatus.PAUSED -> HudAmber
+                                else -> colors.border
+                            }
+                        ),
+                        modifier = Modifier.testTag("trip_status_badge")
+                    ) {
+                        Text(
+                            text = when (tripState.status) {
+                                TripStatus.RUNNING -> strings.occupied.uppercase(Locale.US)
+                                TripStatus.PAUSED -> strings.paused.uppercase(Locale.US)
+                                else -> strings.vacant.uppercase(Locale.US)
+                            },
+                            color = when (tripState.status) {
+                                TripStatus.RUNNING -> colors.onPrimaryAccent
+                                TripStatus.PAUSED -> HudAmber
+                                else -> colors.textPrimary
+                            },
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+
+                // Explicit Auditable GPS Interruption Gap Banner (Never fabricates unmeasured distance!)
+                if (isTripActive && tripState.needsDistanceVerification) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, HudAmber),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .testTag("gps_gap_verification_banner")
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "GPS Interruption Gap Detected (${tripState.unverifiedGapSeconds}s)",
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Saved GPS distance preserved without fabricating missing km. Straight-line ref: ${String.format(Locale.US, "%.2f", tripState.unverifiedGapStraightLineKm)} km.",
+                                color = colors.textSecondary,
+                                fontSize = 11.sp
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { viewModel.dismissGapWarning() },
+                                    modifier = Modifier.weight(1f).height(40.dp)
+                                ) {
+                                    Text("Keep Recorded KM", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Button(
+                                    onClick = { showGapAdjustDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
+                                    modifier = Modifier.weight(1f).height(40.dp)
+                                ) {
+                                    Text("Verify / Add KM", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (isTripActive && activeTripDisplayMode == ActiveTripDisplayMode.MAP_FIRST) {
+                    // Existing Live Map Screen — preserved 100% unchanged
+                    TripMapView(
+                        tripState = tripState,
+                        isNavigationConsoleMode = true,
+                        isExpanded = false,
+                        onToggleExpand = { isMapExpanded = true },
+                        onOpenMeterDetails = { viewModel.showMeterDetails() },
+                        onPauseTrip = { viewModel.pauseTrip() },
+                        onResumeTrip = { viewModel.resumeTrip() },
+                        onEndTrip = {
+                            viewModel.completeTripForSettlement { onNavigateToSettlement() }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(520.dp)
+                            .testTag("active_trip_enlarged_map")
+                    )
                 } else {
                     TripMapView(
                         tripState = tripState,
@@ -547,17 +777,14 @@ fun HomeMeterScreen(
                             .height(190.dp)
                             .padding(vertical = 4.dp)
                     )
-                }
 
-                // COMMERCIAL METER FARE GAUGE HUD
-                CommercialMeterGaugeCard(
-                    tripState = tripState,
-                    activeTripType = if (isTripActive) SangamTripType.fromId(tripState.sangamTripTypeId) else selectedTripType,
-                    onOpenExtras = { showExtraChargesDialog = true }
-                )
+                    // COMMERCIAL METER FARE GAUGE HUD
+                    CommercialMeterGaugeCard(
+                        tripState = tripState,
+                        activeTripType = selectedTripType,
+                        onOpenExtras = { showExtraChargesDialog = true }
+                    )
 
-                // METER MODE SWITCHER & TARIFF CONTROLS (Hidden during active trips)
-                if (!isTripActive) {
                     // OTP Meter vs Direct Meter Independent Mode Switcher
                     Card(
                         colors = CardDefaults.cardColors(containerColor = colors.surface),
@@ -644,81 +871,31 @@ fun HomeMeterScreen(
                             onToggleOver12Hours = { viewModel.setOver12Hours(it) }
                         )
                     }
-                } else {
-                    val isDirectActive = tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT
-                    val activeModeTitle = if (isDirectActive) {
-                        val dCat = SangamTariffConfig.DirectMeterCategory.fromId(tripState.directCategoryId)
-                        "DIRECT METER • ${dCat.displayName}"
-                    } else {
-                        val activeCat = SangamTariffConfig.VehicleCategory.fromId(tripState.vehicleCategoryId)
-                        val activeMode = SangamTripType.fromId(tripState.sangamTripTypeId)
-                        val activeCatLabel = if (tripState.isInnovaCrysta) "INNOVA CRYSTA" else activeCat.displayName
-                        "$activeCatLabel • ${activeMode.displayName}"
-                    }
-                    Surface(
-                        color = colors.surface,
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, colors.border),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .testTag("active_trip_mode_badge")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.LocalTaxi,
-                                    contentDescription = null,
-                                    tint = colors.primaryAccent,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = activeModeTitle,
-                                    color = colors.textPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Black
-                                )
-                            }
-                            Text(
-                                text = if (isDirectActive) "NO CC" else "TRIP ACTIVE",
-                                color = colors.yellowText,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
-                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // PRIMARY START / DIRECT START / START WITH OTP METER ACTIONS
+                    MeterActionControls(
+                        status = tripState.status,
+                        isDirectMode = selectedMeterMode == SangamTariffConfig.METER_MODE_DIRECT,
+                        onStartDirectTrip = { viewModel.startDirectMeterTrip(selectedDirectCategory) },
+                        onStartTrip = { viewModel.startTrip() },
+                        onOpenStartWithOtp = {
+                            otpInput = ""
+                            otpErrorMsg = null
+                            showOtpDialog = true
+                        },
+                        onOpenParkedCalculator = { showQuickCalculatorDialog = true },
+                        onPauseTrip = { viewModel.pauseTrip() },
+                        onResumeTrip = { viewModel.resumeTrip() },
+                        onEndTrip = { viewModel.completeTripForSettlement { onNavigateToSettlement() } }
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // PRIMARY START / DIRECT START / START WITH OTP / PAUSE / END METER ACTIONS
-                MeterActionControls(
-                    status = tripState.status,
-                    isDirectMode = selectedMeterMode == SangamTariffConfig.METER_MODE_DIRECT,
-                    onStartDirectTrip = { viewModel.startDirectMeterTrip(selectedDirectCategory) },
-                    onStartTrip = { viewModel.startTrip() },
-                    onOpenStartWithOtp = {
-                        otpInput = ""
-                        otpErrorMsg = null
-                        showOtpDialog = true
-                    },
-                    onOpenParkedCalculator = { showQuickCalculatorDialog = true },
-                    onPauseTrip = { viewModel.pauseTrip() },
-                    onResumeTrip = { viewModel.resumeTrip() },
-                    onEndTrip = { viewModel.completeTripForSettlement { onNavigateToSettlement() } }
-                )
+                Spacer(modifier = Modifier.height(14.dp))
+                CreatorSignatureBanner(testTag = "home_creator_credit_banner")
+                Spacer(modifier = Modifier.height(24.dp))
             }
-
-            Spacer(modifier = Modifier.height(14.dp))
-            CreatorSignatureBanner(testTag = "home_creator_credit_banner")
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
