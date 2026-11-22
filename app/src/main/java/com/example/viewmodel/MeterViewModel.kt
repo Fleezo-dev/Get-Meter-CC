@@ -175,6 +175,15 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
     fun selectVehicleCategory(category: VehicleCategory) {
         val status = tripState.value.status
         if (status == TripStatus.RUNNING || status == TripStatus.PAUSED) return
+        if (_selectedSangamTripType.value == SangamTripType.HOURLY_RENTAL &&
+            category !in SangamTariffConfig.hourlyRentalSelectableVehicles
+        ) {
+            return
+        }
+        if (category == VehicleCategory.OMNI_EECO) {
+            // OMNI/EECO is excluded from Hourly Rental selection; keep current valid selection unchanged
+            return
+        }
         _selectedVehicleCategory.value = category
         val supported = category.supportedTripTypes()
         if (_selectedSangamTripType.value !in supported) {
@@ -196,6 +205,23 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
     fun setSangamTripType(tripType: SangamTripType) {
         val status = tripState.value.status
         if (status == TripStatus.RUNNING || status == TripStatus.PAUSED) return
+        if (tripType == SangamTripType.HOURLY_RENTAL) {
+            if (_selectedVehicleCategory.value !in SangamTariffConfig.hourlyRentalSelectableVehicles) {
+                _selectedVehicleCategory.value = VehicleCategory.MINI
+                _isInnovaCrysta.value = false
+            }
+            val hourlyTariff = SangamTariffConfig.hourlyTariffFor(_selectedVehicleCategory.value)
+            if (_packageHours.value < hourlyTariff.minHours) {
+                _packageHours.value = hourlyTariff.minHours
+            }
+            if (hourlyTariff.package100KmFare == null) {
+                _use100KmPackage.value = false
+            }
+            _selectedSangamTripType.value = SangamTripType.HOURLY_RENTAL
+            _selectedServiceType.value = ServiceType.RENTAL
+            clearValidationMessage()
+            return
+        }
         val category = _selectedVehicleCategory.value
         val validType = if (tripType in category.supportedTripTypes()) {
             tripType
@@ -214,16 +240,12 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
     fun setServiceType(type: ServiceType) {
         val status = tripState.value.status
         if (status == TripStatus.RUNNING || status == TripStatus.PAUSED) return
-        _selectedServiceType.value = type
         val mapped = when (type) {
             ServiceType.LOCAL -> SangamTripType.LOCAL_NORMAL
             ServiceType.RENTAL -> SangamTripType.HOURLY_RENTAL
             ServiceType.OUTSTATION -> SangamTripType.OUTSTATION_ONE_WAY
         }
-        if (mapped in _selectedVehicleCategory.value.supportedTripTypes()) {
-            _selectedSangamTripType.value = mapped
-        }
-        clearValidationMessage()
+        setSangamTripType(mapped)
     }
 
     fun setInnovaCrysta(enabled: Boolean) {

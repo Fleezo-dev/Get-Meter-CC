@@ -38,9 +38,11 @@ private val WarningAmber = Color(0xFFF59E0B)
 fun VehicleCategorySelectorCard(
     selectedCategory: VehicleCategory,
     isTripActive: Boolean,
-    onSelectCategory: (VehicleCategory) -> Unit
+    onSelectCategory: (VehicleCategory) -> Unit,
+    selectedTripType: SangamTripType = SangamTripType.LOCAL_NORMAL
 ) {
     val colors = LocalGetTaxiColors.current
+    val selectableCategories = SangamTariffConfig.selectableVehiclesForTripType(selectedTripType)
     Card(
         colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = RoundedCornerShape(20.dp),
@@ -90,7 +92,7 @@ fun VehicleCategorySelectorCard(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                VehicleCategory.entries.forEach { category ->
+                selectableCategories.forEach { category ->
                     val selected = category == selectedCategory
                     Surface(
                         color = if (selected) colors.primaryAccent else colors.surfaceElevated,

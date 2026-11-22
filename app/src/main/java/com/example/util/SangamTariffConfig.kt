@@ -81,6 +81,23 @@ object SangamTariffConfig {
         }
     }
 
+    /**
+     * Vehicles displayed in the Hourly Rental selector.
+     * All other vehicle profiles remain intact for non-hourly trip types and historical records.
+     */
+    val hourlyRentalSelectableVehicles: List<VehicleCategory> = listOf(
+        VehicleCategory.MINI,
+        VehicleCategory.SEDAN
+    )
+
+    fun selectableVehiclesForTripType(tripType: SangamTripType): List<VehicleCategory> {
+        return if (tripType == SangamTripType.HOURLY_RENTAL) {
+            hourlyRentalSelectableVehicles
+        } else {
+            VehicleCategory.entries
+        }
+    }
+
     enum class SangamTripType(
         val id: String,
         val displayName: String,

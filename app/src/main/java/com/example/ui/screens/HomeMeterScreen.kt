@@ -103,7 +103,6 @@ fun HomeMeterScreen(
     var otpErrorMsg by remember { mutableStateOf<String?>(null) }
     var logoTapCount by remember { mutableIntStateOf(0) }
     var lastLogoTapMs by remember { mutableLongStateOf(0L) }
-    var isMapExpanded by remember { mutableStateOf(false) }
     var showTopMenu by remember { mutableStateOf(false) }
 
     val isTripActive = tripState.status == TripStatus.RUNNING || tripState.status == TripStatus.PAUSED
@@ -296,14 +295,14 @@ fun HomeMeterScreen(
         },
         containerColor = colors.background
     ) { innerPadding ->
-        if (isTripActive && activeTripDisplayMode == ActiveTripDisplayMode.METER_DETAILS) {
-            // Responsive Active Live Meter Dashboard — eliminates unused bottom blank space across screen sizes
+        if (isTripActive) {
+            // Unified Active Live Meter Dashboard — Fare and Map switch in-place in the exact same rectangular area
             BoxWithConstraints(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
             ) {
-                val minHeightForFill = if (tripState.needsDistanceVerification) 790.dp else 660.dp
+                val minHeightForFill = if (tripState.needsDistanceVerification) 820.dp else 690.dp
                 val isCompactViewport = maxHeight < minHeightForFill
                 val containerModifier = if (isCompactViewport) {
                     Modifier
@@ -459,28 +458,88 @@ fun HomeMeterScreen(
                         modifier = videoModifier
                     )
 
-                    // 4. Back to Live Map Button (preserves exact trip state without reset)
-                    OutlinedButton(
-                        onClick = { viewModel.showMapDisplay() },
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = colors.surface, contentColor = colors.primaryAccent),
-                        border = BorderStroke(1.dp, colors.primaryAccent),
+                    // 4. In-Place Fare / Map Switcher (switches content in the exact same rectangular slot below)
+                    val isMapSelected = activeTripDisplayMode == ActiveTripDisplayMode.MAP_FIRST
+                    Surface(
+                        color = colors.surface,
                         shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, colors.border),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("return_to_map_button")
+                            .testTag("active_meter_view_switcher")
                     ) {
-                        Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(strings.returnToMapButton, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Button(
+                                onClick = { viewModel.showMeterDetails() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (!isMapSelected) colors.primaryAccent else colors.surfaceElevated,
+                                    contentColor = if (!isMapSelected) colors.onPrimaryAccent else colors.textPrimary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("active_meter_tab_fare")
+                            ) {
+                                Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("FARE", fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
+                            }
+
+                            Button(
+                                onClick = { viewModel.showMapDisplay() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isMapSelected) colors.primaryAccent else colors.surfaceElevated,
+                                    contentColor = if (isMapSelected) colors.onPrimaryAccent else colors.textPrimary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("active_meter_tab_map")
+                            ) {
+                                Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("MAP", fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
+                            }
+                        }
                     }
 
-                    // 5. Prominent, Unstretched Commercial Fare & Telemetry Panel
-                    CommercialMeterGaugeCard(
-                        tripState = tripState,
-                        activeTripType = SangamTripType.fromId(tripState.sangamTripTypeId),
-                        onOpenExtras = { showExtraChargesDialog = true }
-                    )
+                    // 5. Shared Rectangular Area — Fare Panel and Live Map switch strictly in-place
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(238.dp)
+                            .testTag("active_meter_shared_panel_slot")
+                    ) {
+                        if (isMapSelected) {
+                            // Map view inside the exact fare-panel area: no fare panel, no telemetry overlays, no fullscreen jump
+                            TripMapView(
+                                tripState = tripState,
+                                isNavigationConsoleMode = false,
+                                isExpanded = false,
+                                onToggleExpand = null,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("active_trip_inline_map")
+                            )
+                        } else {
+                            CommercialMeterGaugeCard(
+                                tripState = tripState,
+                                activeTripType = SangamTripType.fromId(tripState.sangamTripTypeId),
+                                onOpenExtras = { showExtraChargesDialog = true },
+                                fillSlotHeight = true,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
 
                     // 6. Active Trip Mode / Category Pill
                     val isDirectActive = tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT
@@ -751,39 +810,20 @@ fun HomeMeterScreen(
                     }
                 }
 
-                if (isTripActive && activeTripDisplayMode == ActiveTripDisplayMode.MAP_FIRST) {
-                    // Existing Live Map Screen — preserved 100% unchanged
-                    TripMapView(
-                        tripState = tripState,
-                        isNavigationConsoleMode = true,
-                        isExpanded = false,
-                        onToggleExpand = { isMapExpanded = true },
-                        onOpenMeterDetails = { viewModel.showMeterDetails() },
-                        onPauseTrip = { viewModel.pauseTrip() },
-                        onResumeTrip = { viewModel.resumeTrip() },
-                        onEndTrip = {
-                            viewModel.completeTripForSettlement { onNavigateToSettlement() }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(520.dp)
-                            .testTag("active_trip_enlarged_map")
-                    )
-                } else {
-                    TripMapView(
-                        tripState = tripState,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(190.dp)
-                            .padding(vertical = 4.dp)
-                    )
+                TripMapView(
+                    tripState = tripState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(190.dp)
+                        .padding(vertical = 4.dp)
+                )
 
-                    // COMMERCIAL METER FARE GAUGE HUD
-                    CommercialMeterGaugeCard(
-                        tripState = tripState,
-                        activeTripType = selectedTripType,
-                        onOpenExtras = { showExtraChargesDialog = true }
-                    )
+                // COMMERCIAL METER FARE GAUGE HUD
+                CommercialMeterGaugeCard(
+                    tripState = tripState,
+                    activeTripType = selectedTripType,
+                    onOpenExtras = { showExtraChargesDialog = true }
+                )
 
                     // OTP Meter vs Direct Meter Independent Mode Switcher
                     Card(
@@ -842,6 +882,7 @@ fun HomeMeterScreen(
                     } else {
                         VehicleCategorySelectorCard(
                             selectedCategory = selectedVehicle,
+                            selectedTripType = selectedTripType,
                             isTripActive = false,
                             onSelectCategory = { viewModel.selectVehicleCategory(it) }
                         )
@@ -890,7 +931,6 @@ fun HomeMeterScreen(
                         onResumeTrip = { viewModel.resumeTrip() },
                         onEndTrip = { viewModel.completeTripForSettlement { onNavigateToSettlement() } }
                     )
-                }
 
                 Spacer(modifier = Modifier.height(14.dp))
                 CreatorSignatureBanner(testTag = "home_creator_credit_banner")
@@ -1014,38 +1054,6 @@ fun HomeMeterScreen(
             onDismiss = { showExtraChargesDialog = false }
         )
     }
-
-    if (isMapExpanded && isTripActive) {
-        Dialog(
-            onDismissRequest = { isMapExpanded = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(colors.background)
-                    .statusBarsPadding()
-            ) {
-                TripMapView(
-                    tripState = tripState,
-                    isNavigationConsoleMode = true,
-                    isExpanded = true,
-                    onToggleExpand = { isMapExpanded = false },
-                    onOpenMeterDetails = {
-                        isMapExpanded = false
-                        viewModel.showMeterDetails()
-                    },
-                    onPauseTrip = { viewModel.pauseTrip() },
-                    onResumeTrip = { viewModel.resumeTrip() },
-                    onEndTrip = {
-                        isMapExpanded = false
-                        viewModel.completeTripForSettlement { onNavigateToSettlement() }
-                    },
-                    modifier = Modifier.fillMaxSize().testTag("expanded_active_trip_map")
-                )
-            }
-        }
-    }
 }
 
 @Composable
@@ -1146,24 +1154,33 @@ private fun DirectMeterSelectorCard(
 private fun CommercialMeterGaugeCard(
     tripState: com.example.data.model.TripState,
     activeTripType: SangamTripType,
-    onOpenExtras: () -> Unit
+    onOpenExtras: () -> Unit,
+    fillSlotHeight: Boolean = false,
+    modifier: Modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 6.dp)
 ) {
     val colors = LocalGetTaxiColors.current
     Card(
         colors = CardDefaults.cardColors(containerColor = colors.meterDisplayBg),
         shape = RoundedCornerShape(26.dp),
         border = BorderStroke(1.5.dp, if (tripState.hasUnresolvedBoundaryFlag) HudAmber else colors.primaryAccent),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp)
+        modifier = modifier
             .testTag("meter_details_fare_card")
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Box(modifier = if (fillSlotHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp)
+                verticalArrangement = if (fillSlotHeight) Arrangement.Center else Arrangement.Top,
+                modifier = if (fillSlotHeight) {
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                }
             ) {
                 Text(
                     text = if (tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT) "DIRECT METER FARE" else "LIVE METER FARE",

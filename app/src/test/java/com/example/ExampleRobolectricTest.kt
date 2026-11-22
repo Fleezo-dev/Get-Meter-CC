@@ -931,11 +931,83 @@ class ExampleRobolectricTest {
         assertEquals(beforeSwitch.waitingSeconds, afterReturn.waitingSeconds)
         assertTrue(afterReturn.durationSeconds >= beforeSwitch.durationSeconds)
 
-        // Clean up service & active trip record so other tests start clean
+        // Clean up service & active trip record so other tests start cleanly in IDLE
         dao.clearActiveTrip()
+        serviceController
+            .withIntent(android.content.Intent(app, LocationTrackingService::class.java).apply {
+                action = "STOP_SERVICE"
+            })
+            .startCommand(0, 0)
+        mainLooper.idle()
         serviceController.destroy()
         Unit
     }
+
+    @Test
+    fun `verify Hourly Rental vehicle selector exposes only MINI and SEDAN while preserving all profiles for other trip types`() {
+        val hourlyVehicles = com.example.util.SangamTariffConfig.selectableVehiclesForTripType(
+            com.example.util.SangamTariffConfig.SangamTripType.HOURLY_RENTAL
+        )
+        assertEquals(
+            listOf(
+                com.example.util.SangamTariffConfig.VehicleCategory.MINI,
+                com.example.util.SangamTariffConfig.VehicleCategory.SEDAN
+            ),
+            hourlyVehicles
+        )
+
+        // All 6 vehicle profiles remain intact for non-hourly trip types
+        val localVehicles = com.example.util.SangamTariffConfig.selectableVehiclesForTripType(
+            com.example.util.SangamTariffConfig.SangamTripType.LOCAL_NORMAL
+        )
+        assertEquals(6, localVehicles.size)
+        assertTrue(localVehicles.contains(com.example.util.SangamTariffConfig.VehicleCategory.OMNI_EECO))
+        assertTrue(localVehicles.contains(com.example.util.SangamTariffConfig.VehicleCategory.SUV))
+        assertTrue(localVehicles.contains(com.example.util.SangamTariffConfig.VehicleCategory.SUV_PLUS))
+        assertTrue(localVehicles.contains(com.example.util.SangamTariffConfig.VehicleCategory.INNOVA))
+
+        // MeterViewModel auto-switches excluded vehicle (e.g., INNOVA) to MINI when Hourly Rental is selected
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = MeterViewModel(app)
+        viewModel.selectVehicleCategory(com.example.util.SangamTariffConfig.VehicleCategory.INNOVA)
+        assertEquals(com.example.util.SangamTariffConfig.VehicleCategory.INNOVA, viewModel.selectedVehicleCategory.value)
+
+        viewModel.setSangamTripType(com.example.util.SangamTariffConfig.SangamTripType.HOURLY_RENTAL)
+        assertEquals(com.example.util.SangamTariffConfig.SangamTripType.HOURLY_RENTAL, viewModel.selectedSangamTripType.value)
+        assertEquals(com.example.util.SangamTariffConfig.VehicleCategory.MINI, viewModel.selectedVehicleCategory.value)
+
+        // Selecting SEDAN works in Hourly Rental, while excluded vehicles are ignored
+        viewModel.selectVehicleCategory(com.example.util.SangamTariffConfig.VehicleCategory.SEDAN)
+        assertEquals(com.example.util.SangamTariffConfig.VehicleCategory.SEDAN, viewModel.selectedVehicleCategory.value)
+
+        viewModel.selectVehicleCategory(com.example.util.SangamTariffConfig.VehicleCategory.SUV)
+        assertEquals(com.example.util.SangamTariffConfig.VehicleCategory.SEDAN, viewModel.selectedVehicleCategory.value)
+        viewModel.selectVehicleCategory(com.example.util.SangamTariffConfig.VehicleCategory.OMNI_EECO)
+        assertEquals(com.example.util.SangamTariffConfig.VehicleCategory.SEDAN, viewModel.selectedVehicleCategory.value)
+        viewModel.selectVehicleCategory(com.example.util.SangamTariffConfig.VehicleCategory.INNOVA)
+        assertEquals(com.example.util.SangamTariffConfig.VehicleCategory.SEDAN, viewModel.selectedVehicleCategory.value)
+
+        // Switching back to Outstation restores ability to select SUV / INNOVA
+        viewModel.setSangamTripType(com.example.util.SangamTariffConfig.SangamTripType.OUTSTATION_ROUND_TRIP)
+        viewModel.selectVehicleCategory(com.example.util.SangamTariffConfig.VehicleCategory.INNOVA)
+        assertEquals(com.example.util.SangamTariffConfig.VehicleCategory.INNOVA, viewModel.selectedVehicleCategory.value)
+    }
+
+    @Test
+    fun `verify SplashScreen launch_intro raw resource resolver supports both absent fallback and supplied MP4`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val resId = com.example.ui.screens.resolveLaunchIntroRawResId(context)
+        assertTrue("Resolved resource ID must be >= 0", resId >= 0)
+        if (resId != 0) {
+            val header = ByteArray(16)
+            context.resources.openRawResource(resId).use { input ->
+                assertTrue("Supplied launch_intro.mp4 must have >= 12 header bytes", input.read(header) >= 12)
+            }
+            assertEquals("ftyp", String(header, 4, 4, Charsets.US_ASCII))
+        }
+    }
 }
+
+
 
 
