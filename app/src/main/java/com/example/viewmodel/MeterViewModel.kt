@@ -106,6 +106,9 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
     private val _hasActiveSessionBackup = MutableStateFlow(false)
     val hasActiveSessionBackup: StateFlow<Boolean> = _hasActiveSessionBackup.asStateFlow()
 
+    private val _pendingActiveTripBackup = MutableStateFlow<com.example.data.database.ActiveTripRecord?>(null)
+    val pendingActiveTripBackup: StateFlow<com.example.data.database.ActiveTripRecord?> = _pendingActiveTripBackup.asStateFlow()
+
     private val _driverProfile = MutableStateFlow<DriverProfileEntity?>(null)
     val driverProfile: StateFlow<DriverProfileEntity?> = _driverProfile.asStateFlow()
 
@@ -316,7 +319,13 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val backup = tripRepository.getActiveTrip()
             val liveStatus = tripState.value.status
-            _hasActiveSessionBackup.value = backup != null && liveStatus == TripStatus.IDLE
+            val recoverableBackup = if (backup != null && liveStatus == TripStatus.IDLE && backup.startTime > 0L) {
+                backup
+            } else {
+                null
+            }
+            _pendingActiveTripBackup.value = recoverableBackup
+            _hasActiveSessionBackup.value = recoverableBackup != null
             if (backup != null) {
                 _selectedMeterMode.value = backup.meterMode.ifBlank { SangamTariffConfig.METER_MODE_OTP }
                 _selectedDirectCategory.value = SangamTariffConfig.DirectMeterCategory.fromId(backup.directCategoryId)
@@ -329,13 +338,8 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
                 _over12Hours.value = backup.over12Hours
                 _packageHours.value = backup.packageHours.coerceIn(1, 12)
                 _use100KmPackage.value = backup.use100KmPackage
-                // Seamless active-trip recovery if process restarted while a trip was running/paused
-                if (liveStatus == TripStatus.IDLE && backup.startTime > 0L) {
-                    Log.d("MeterViewModel", "Auto-recovering interrupted active trip ${backup.tripNumber} (${backup.distanceKm} km)")
-                    recoverTrip()
-                }
             }
-            Log.d("MeterViewModel", "Checked active session backup: ${backup != null}")
+            Log.d("MeterViewModel", "Checked active session backup: ${recoverableBackup != null}")
         }
     }
 
@@ -443,6 +447,7 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
                 vendorContactNumber = ""
             )
             _hasActiveSessionBackup.value = false
+            _pendingActiveTripBackup.value = null
         }
     }
 
@@ -480,7 +485,7 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
                     ServiceType.OUTSTATION.id,
                     directSnapshot.outstationBaseFare,
                     directSnapshot.outstationPerKmRate,
-                    directSnapshot.waitingChargePerMin
+                    0.0
                 )
             }
 
@@ -512,6 +517,7 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
                 vendorContactNumber = ""
             )
             _hasActiveSessionBackup.value = false
+            _pendingActiveTripBackup.value = null
         }
     }
 
@@ -947,20 +953,23 @@ class MeterViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 tripRepository.clearActiveTrip()
                 _hasActiveSessionBackup.value = false
+                _pendingActiveTripBackup.value = null
             }
         }
     }
 
-    fun recoverTrip() {
-        _activeTripDisplayMode.value = ActiveTripDisplayMode.MAP_FIRST
-        LocationTrackingService.recoveryTrip(getApplication())
+    fun recoverTrip(additionalKm: Double = 0.0) {
+        _activeTripDisplayMode.value = ActiveTripDisplayMode.METER_DETAILS
+        LocationTrackingService.recoveryTrip(getApplication(), additionalKm)
         _hasActiveSessionBackup.value = false
+        _pendingActiveTripBackup.value = null
     }
 
     fun discardBackup() {
         viewModelScope.launch {
             tripRepository.clearActiveTrip()
             _hasActiveSessionBackup.value = false
+            _pendingActiveTripBackup.value = null
         }
     }
 

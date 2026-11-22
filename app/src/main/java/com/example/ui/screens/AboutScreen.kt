@@ -44,7 +44,23 @@ import com.example.ui.theme.LocalGetTaxiColors
 
 private const val HDS_PREFS_NAME = "hds_company_prefs"
 private const val KEY_HDS_CONTACT_PHONE = "hds_contact_phone"
+internal const val DEFAULT_HDS_CONTACT_PHONE = "9043743777"
 private const val GET_TAXI_TELEGRAM_GROUP_URL = "https://t.me/+dOFMD6gQOftlYTA1"
+
+internal fun formatHdsWhatsAppNumber(rawPhone: String): String {
+    val digits = rawPhone.filter { it.isDigit() }
+    return when {
+        digits.length == 10 -> "+91$digits"
+        digits.startsWith("91") && digits.length == 12 -> "+$digits"
+        digits.isNotEmpty() -> "+$digits"
+        else -> "+91$DEFAULT_HDS_CONTACT_PHONE"
+    }
+}
+
+internal fun buildHdsWhatsAppUri(rawPhone: String): String {
+    val international = formatHdsWhatsAppNumber(rawPhone)
+    return "https://api.whatsapp.com/send?phone=${Uri.encode(international)}"
+}
 
 /**
  * Habeeb Digital Solutions (HDS) — A unit of Get Taxi.
@@ -59,7 +75,12 @@ fun AboutScreen(
     val colors = LocalGetTaxiColors.current
     val prefs = remember { context.getSharedPreferences(HDS_PREFS_NAME, Context.MODE_PRIVATE) }
     var hdsContactNumber by remember {
-        mutableStateOf(prefs.getString(KEY_HDS_CONTACT_PHONE, "")?.trim().orEmpty())
+        mutableStateOf(
+            prefs.getString(KEY_HDS_CONTACT_PHONE, DEFAULT_HDS_CONTACT_PHONE)
+                ?.trim()
+                .orEmpty()
+                .ifBlank { DEFAULT_HDS_CONTACT_PHONE }
+        )
     }
     var showContactConfigDialog by remember { mutableStateOf(false) }
 
@@ -399,11 +420,9 @@ fun AboutScreen(
 
                                     Button(
                                         onClick = {
-                                            val digits = hdsContactNumber.filter { it.isDigit() }
-                                            val waNum = if (digits.length == 10) "91$digits" else digits
                                             runCatching {
                                                 context.startActivity(
-                                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$waNum"))
+                                                    Intent(Intent.ACTION_VIEW, Uri.parse(buildHdsWhatsAppUri(hdsContactNumber)))
                                                 )
                                             }
                                         },
@@ -600,7 +619,7 @@ fun AboutScreen(
                         }
                         Button(
                             onClick = {
-                                val clean = phoneDraft.trim()
+                                val clean = phoneDraft.trim().ifBlank { DEFAULT_HDS_CONTACT_PHONE }
                                 prefs.edit().putString(KEY_HDS_CONTACT_PHONE, clean).apply()
                                 hdsContactNumber = clean
                                 showContactConfigDialog = false

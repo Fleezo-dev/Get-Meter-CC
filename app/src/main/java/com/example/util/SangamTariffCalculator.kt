@@ -381,19 +381,8 @@ object SangamTariffCalculator {
                         distAmt
                     )
                 )
+                // Outstation waiting is manual-only via Additional Charges (no automatic waiting calculation)
                 coreTariffSubtotal = baseAmt.add(distAmt)
-
-                val waitAmt = calculateCustomWaitingCharge(waitingMinutes, waitRateBd)
-                if (waitAmt > BigDecimal.ZERO) {
-                    items.add(
-                        FareLineItem(
-                            "Waiting Charge",
-                            formatCustomWaitingDetail(waitingMinutes, tariffSnapshot.waitingChargePerMin),
-                            waitAmt
-                        )
-                    )
-                    coreTariffSubtotal = coreTariffSubtotal.add(waitAmt)
-                }
             }
         }
 

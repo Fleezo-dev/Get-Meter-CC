@@ -286,7 +286,7 @@ class SangamTariffCalculatorTest {
         assertEquals(BigDecimal("850.00"), directHourly.customerBillTotal)
         assertTrue(directHourly.commissionResult is CommissionResult.NotSpecified)
 
-        // Default Outstation: ₹300 base + ₹30/km + ₹2/min waiting
+        // Default Outstation: ₹300 base + ₹30/km (NO automatic waiting; waiting is manual via Additional Charges)
         val directOutstation = SangamTariffCalculator.calculateTripFareAndSettlement(
             TripCalculationInput(
                 meterMode = SangamTariffConfig.METER_MODE_DIRECT,
@@ -295,10 +295,23 @@ class SangamTariffCalculatorTest {
                 waitingMinutes = 15.0
             )
         )
-        // 300 + 3000 + 30 = 3330.00
+        // 300 + 3000 = 3300.00 (15 min waiting ignored automatically on Outstation)
         assertTrue(directOutstation.isDirectMeter)
-        assertEquals(BigDecimal("3330.00"), directOutstation.customerBillTotal)
+        assertEquals(BigDecimal("3300.00"), directOutstation.customerBillTotal)
         assertTrue(directOutstation.commissionResult is CommissionResult.NotSpecified)
+
+        // Direct Meter Outstation with manual waiting entered via Additional Charges (e.g., ₹400)
+        val directOutstationManualWait = SangamTariffCalculator.calculateTripFareAndSettlement(
+            TripCalculationInput(
+                meterMode = SangamTariffConfig.METER_MODE_DIRECT,
+                directCategory = DirectMeterCategory.OUTSTATION,
+                distanceKm = 100.0,
+                waitingMinutes = 45.0,
+                extraChargeItems = listOf(com.example.data.model.ExtraChargeItem(label = "Waiting Charge", amount = 400.0))
+            )
+        )
+        // 300 + 3000 + 400 manual extra = 3700.00
+        assertEquals(BigDecimal("3700.00"), directOutstationManualWait.customerBillTotal)
 
         // Custom Direct Meter snapshot updates Direct Meter WITHOUT changing OTP tariffs
         val customSnapshot = DirectMeterTariffSnapshot(

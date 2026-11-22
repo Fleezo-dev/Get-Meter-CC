@@ -1006,6 +1006,167 @@ class ExampleRobolectricTest {
             assertEquals("ftyp", String(header, 4, 4, Charsets.US_ASCII))
         }
     }
+
+    @Test
+    fun directMeterWaitingChargeAppliesToLocalOnlyAndNeverToOutstation() {
+        val localTick = com.example.service.LocationTrackingService.computeNextWaitingTick(
+            tripTypeId = com.example.util.SangamTariffConfig.SangamTripType.LOCAL_NORMAL.id,
+            currentWaitingSeconds = 59L,
+            speedKmH = 0f,
+            speedThreshold = 5.0,
+            msSinceLastMovingFix = 6000L,
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_DIRECT,
+            directCategoryId = com.example.util.SangamTariffConfig.DirectMeterCategory.LOCAL.id
+        )
+        assertEquals(60L, localTick.nextWaitingSeconds)
+
+        val outstationTick = com.example.service.LocationTrackingService.computeNextWaitingTick(
+            tripTypeId = com.example.util.SangamTariffConfig.SangamTripType.OUTSTATION_ONE_WAY.id,
+            currentWaitingSeconds = 120L,
+            speedKmH = 0f,
+            speedThreshold = 5.0,
+            msSinceLastMovingFix = 6000L,
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_DIRECT,
+            directCategoryId = com.example.util.SangamTariffConfig.DirectMeterCategory.OUTSTATION.id
+        )
+        assertEquals("Direct Meter Outstation must not accumulate automatic waiting seconds", 0L, outstationTick.nextWaitingSeconds)
+
+        val snapshotJson = com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot(
+            localBaseFare = 100.0,
+            localPerKmRate = 30.0,
+            outstationBaseFare = 300.0,
+            outstationPerKmRate = 30.0,
+            waitingChargePerMin = 2.0
+        ).toJson()
+
+        val localState = com.example.data.model.TripState(
+            status = com.example.data.model.TripStatus.RUNNING,
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_DIRECT,
+            directCategoryId = com.example.util.SangamTariffConfig.DirectMeterCategory.LOCAL.id,
+            directTariffSnapshotJson = snapshotJson,
+            distanceKm = 5.0,
+            waitingSeconds = 600L // 10 min * ₹2 = ₹20
+        )
+        val localBreakdown = com.example.service.LocationTrackingService.calculateBreakdownForState(localState)
+        assertEquals(270.0, localBreakdown.customerBillTotal.toDouble(), 0.01)
+
+        val outstationState = com.example.data.model.TripState(
+            status = com.example.data.model.TripStatus.RUNNING,
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_DIRECT,
+            directCategoryId = com.example.util.SangamTariffConfig.DirectMeterCategory.OUTSTATION.id,
+            directTariffSnapshotJson = snapshotJson,
+            distanceKm = 50.0,
+            waitingSeconds = 1800L, // 30 min stationary must NOT add auto waiting charge
+            extraChargeItems = listOf(com.example.data.model.ExtraChargeItem(label = "Manual Waiting", amount = 300.0))
+        )
+        val outstationBreakdown = com.example.service.LocationTrackingService.calculateBreakdownForState(outstationState)
+        // ₹300 base + 50*₹30 + ₹300 manual extra = ₹2100.00 (zero automatic waiting)
+        assertEquals(2100.0, outstationBreakdown.customerBillTotal.toDouble(), 0.01)
+    }
+
+    @Test
+    fun tripRecoveryManualMissingKmUsesActualSavedTripTariffAndPreservesTripIdentity() {
+        val directSnapshotJson = com.example.util.SangamTariffConfig.DirectMeterTariffSnapshot(
+            outstationBaseFare = 300.0,
+            outstationPerKmRate = 30.0,
+            localBaseFare = 150.0,
+            localPerKmRate = 25.0
+        ).toJson()
+        val extrasJson = com.example.data.model.ExtraChargeItem.serialize(
+            listOf(com.example.data.model.ExtraChargeItem(label = "Toll", amount = 120.0))
+        )
+
+        // Case 1: Direct Meter Outstation saved at 90 km (₹30/km) + 10 missing km => +₹300, total 100 km
+        val directRecord = com.example.data.database.ActiveTripRecord(
+            tripNumber = "GTM-RECOVER-01",
+            startTime = 1700000000000L,
+            durationSeconds = 5400L,
+            waitingSeconds = 0L,
+            distanceKm = 90.0,
+            currentFare = 3120.0,
+            isPaused = false,
+            baseFare = 300.0,
+            farePerKm = 30.0,
+            waitFarePerMin = 0.0,
+            currency = "₹",
+            serviceType = com.example.data.model.ServiceType.OUTSTATION.id,
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_DIRECT,
+            directCategoryId = com.example.util.SangamTariffConfig.DirectMeterCategory.OUTSTATION.id,
+            directTariffSnapshotJson = directSnapshotJson,
+            extraChargesJson = extrasJson
+        )
+        val directPreview = com.example.service.LocationTrackingService.previewRecoveryAdjustment(directRecord, 10.0)
+        assertEquals(90.0, directPreview.savedDistanceKm, 0.01)
+        assertEquals(100.0, directPreview.correctedDistanceKm, 0.01)
+        assertEquals(3120.0, directPreview.savedFare, 0.01)
+        assertEquals(300.0, directPreview.additionalFare, 0.01)
+        assertEquals(3420.0, directPreview.correctedFare, 0.01)
+
+        val directRecovered = com.example.service.LocationTrackingService.buildRecoveredTripState(directRecord, 10.0)
+        assertEquals("GTM-RECOVER-01", directRecovered.tripNumber)
+        assertEquals(1700000000000L, directRecovered.startTime)
+        assertEquals(5400L, directRecovered.durationSeconds)
+        assertEquals(100.0, directRecovered.distanceKm, 0.01)
+        assertEquals(1, directRecovered.extraChargeItems.size)
+        assertEquals(120.0, directRecovered.liveExtraChargesTotal, 0.01)
+
+        // Case 2: OTP Outstation Round-Trip saved at 90 km (₹500 base + ₹15/km) + 10 missing km => +₹150 (NOT hardcoded ₹30/km!)
+        val otpRoundTripRecord = com.example.data.database.ActiveTripRecord(
+            tripNumber = "GTM-RECOVER-02",
+            startTime = 1700001000000L,
+            durationSeconds = 7200L,
+            waitingSeconds = 0L,
+            distanceKm = 90.0,
+            currentFare = 1850.0,
+            isPaused = false,
+            baseFare = 500.0,
+            farePerKm = 15.0,
+            waitFarePerMin = 0.0,
+            currency = "₹",
+            serviceType = com.example.data.model.ServiceType.OUTSTATION.id,
+            vehicleCategoryId = com.example.util.SangamTariffConfig.VehicleCategory.SEDAN.id,
+            sangamTripTypeId = com.example.util.SangamTariffConfig.SangamTripType.OUTSTATION_ROUND_TRIP.id,
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_OTP
+        )
+        val otpPreview = com.example.service.LocationTrackingService.previewRecoveryAdjustment(otpRoundTripRecord, 10.0)
+        assertEquals(1850.0, otpPreview.savedFare, 0.01)
+        assertEquals(150.0, otpPreview.additionalFare, 0.01)
+        assertEquals(2000.0, otpPreview.correctedFare, 0.01)
+
+        // Case 3: Custom Direct Meter Local saved tariff (₹150 base + ₹25/km) + 4 missing km => +₹100
+        val customLocalRecord = com.example.data.database.ActiveTripRecord(
+            tripNumber = "GTM-RECOVER-03",
+            startTime = 1700002000000L,
+            durationSeconds = 1200L,
+            waitingSeconds = 300L, // 5 min * ₹2 = ₹10
+            distanceKm = 10.0,
+            currentFare = 410.0,
+            isPaused = false,
+            baseFare = 150.0,
+            farePerKm = 25.0,
+            waitFarePerMin = 2.0,
+            currency = "₹",
+            serviceType = com.example.data.model.ServiceType.LOCAL.id,
+            meterMode = com.example.util.SangamTariffConfig.METER_MODE_DIRECT,
+            directCategoryId = com.example.util.SangamTariffConfig.DirectMeterCategory.LOCAL.id,
+            directTariffSnapshotJson = directSnapshotJson
+        )
+        val customLocalPreview = com.example.service.LocationTrackingService.previewRecoveryAdjustment(customLocalRecord, 4.0)
+        assertEquals(410.0, customLocalPreview.savedFare, 0.01)
+        assertEquals(100.0, customLocalPreview.additionalFare, 0.01)
+        assertEquals(510.0, customLocalPreview.correctedFare, 0.01)
+    }
+
+    @Test
+    fun hdsContactDefaultsToConfiguredIndianPhoneAndWhatsAppUri() {
+        assertEquals("9043743777", com.example.ui.screens.DEFAULT_HDS_CONTACT_PHONE)
+        assertEquals("+919043743777", com.example.ui.screens.formatHdsWhatsAppNumber("9043743777"))
+        assertEquals("+919043743777", com.example.ui.screens.formatHdsWhatsAppNumber("+91 90437 43777"))
+        assertEquals(
+            "https://api.whatsapp.com/send?phone=%2B919043743777",
+            com.example.ui.screens.buildHdsWhatsAppUri("9043743777")
+        )
+    }
 }
 
 

@@ -91,6 +91,7 @@ fun HomeMeterScreen(
     val over12Hours by viewModel.over12Hours.collectAsStateWithLifecycle()
     val activeTripDisplayMode by viewModel.activeTripDisplayMode.collectAsStateWithLifecycle()
     val hasBackup by viewModel.hasActiveSessionBackup.collectAsStateWithLifecycle()
+    val pendingBackup by viewModel.pendingActiveTripBackup.collectAsStateWithLifecycle()
     val validationMessage by viewModel.tariffValidationMessage.collectAsStateWithLifecycle()
     val connectivityStatus by viewModel.connectivityStatus.collectAsStateWithLifecycle()
 
@@ -582,12 +583,14 @@ fun HomeMeterScreen(
                                     fontWeight = FontWeight.Black
                                 )
                             }
-                            Text(
-                                text = if (isDirectActive) "NO CC" else "TRIP ACTIVE",
-                                color = colors.yellowText,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black
-                            )
+                            if (!isDirectActive) {
+                                Text(
+                                    text = "TRIP ACTIVE",
+                                    color = colors.yellowText,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
                         }
                     }
 
@@ -624,6 +627,17 @@ fun HomeMeterScreen(
                     BatteryOptimizationCard()
 
                     if (hasBackup && tripState.status == TripStatus.IDLE) {
+                        var recoveryMissingKmInput by remember(pendingBackup?.tripNumber, pendingBackup?.distanceKm) {
+                            mutableStateOf("")
+                        }
+                        val enteredMissingKm = recoveryMissingKmInput.trim().toDoubleOrNull()
+                            ?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+                        val recoveryPreview = remember(pendingBackup, enteredMissingKm) {
+                            pendingBackup?.let { record ->
+                                LocationTrackingService.previewRecoveryAdjustment(record, enteredMissingKm)
+                            }
+                        }
+
                         Card(
                             colors = CardDefaults.cardColors(containerColor = colors.yellowContainer),
                             shape = RoundedCornerShape(18.dp),
@@ -631,10 +645,12 @@ fun HomeMeterScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 6.dp)
+                                .testTag("unfinished_ride_recovery_card")
                         ) {
                             Column(
                                 modifier = Modifier.padding(14.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
                                     text = strings.unfinishedRideDetected,
@@ -646,23 +662,81 @@ fun HomeMeterScreen(
                                     text = strings.unfinishedRideDesc,
                                     color = colors.textPrimary,
                                     fontSize = 12.sp,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 4.dp)
+                                    textAlign = TextAlign.Center
                                 )
+                                if (recoveryPreview != null) {
+                                    Text(
+                                        text = "Saved: ${String.format(Locale.US, "%.2f", recoveryPreview.savedDistanceKm)} km • ${recoveryPreview.currency}${String.format(Locale.US, "%.2f", recoveryPreview.savedFare)}",
+                                        color = colors.textPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.testTag("recovery_saved_summary")
+                                    )
+                                }
+                                OutlinedTextField(
+                                    value = recoveryMissingKmInput,
+                                    onValueChange = { raw ->
+                                        if (raw.isEmpty() || raw.matches(Regex("^\\d*\\.?\\d{0,2}$"))) {
+                                            recoveryMissingKmInput = raw
+                                        }
+                                    },
+                                    label = { Text("Missing KM (Optional)", fontSize = 12.sp) },
+                                    placeholder = { Text("e.g. 10", fontSize = 12.sp) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("recovery_missing_km_input")
+                                )
+                                if (recoveryPreview != null && enteredMissingKm > 0.0) {
+                                    Surface(
+                                        color = colors.surface,
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, colors.border),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("recovery_adjustment_preview")
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Text(
+                                                text = "Adding +${String.format(Locale.US, "%.2f", recoveryPreview.additionalKm)} km (+${recoveryPreview.currency}${String.format(Locale.US, "%.2f", recoveryPreview.additionalFare)} using saved tariff)",
+                                                color = colors.primaryAccent,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Resumed Total: ${String.format(Locale.US, "%.2f", recoveryPreview.correctedDistanceKm)} km • ${recoveryPreview.currency}${String.format(Locale.US, "%.2f", recoveryPreview.correctedFare)}",
+                                                color = colors.textPrimary,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
+                                        }
+                                    }
+                                }
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     OutlinedButton(
                                         onClick = { viewModel.discardBackup() },
-                                        modifier = Modifier.weight(1f).height(48.dp)
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp)
+                                            .testTag("recovery_discard_button")
                                     ) {
                                         Text(strings.discard, color = colors.textSecondary, fontWeight = FontWeight.Bold)
                                     }
                                     Button(
-                                        onClick = { viewModel.recoverTrip() },
+                                        onClick = { viewModel.recoverTrip(enteredMissingKm) },
                                         colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent, contentColor = colors.onPrimaryAccent),
-                                        modifier = Modifier.weight(1.4f).height(48.dp)
+                                        modifier = Modifier
+                                            .weight(1.4f)
+                                            .height(48.dp)
+                                            .testTag("recovery_resume_button")
                                     ) {
                                         Text(strings.resumeRide, fontWeight = FontWeight.Black)
                                     }
@@ -1075,23 +1149,9 @@ private fun DirectMeterSelectorCard(
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "DIRECT METER MODE (NO OTP • NO CC)",
-                        color = colors.primaryAccent,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 0.8.sp
-                    )
-                    Text(
-                        text = "Customer Invoice only • Separate from OTP Meter",
-                        color = colors.textSecondary,
-                        fontSize = 11.sp
-                    )
-                }
                 TextButton(
                     onClick = onOpenDirectSettings,
                     modifier = Modifier.testTag("open_direct_settings_button")
@@ -1138,7 +1198,7 @@ private fun DirectMeterSelectorCard(
                 SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL ->
                     "Default Hourly: ₹375/hr • 10 KM Included • ₹20/extra km (editable in Direct Meter Settings)"
                 SangamTariffConfig.DirectMeterCategory.OUTSTATION ->
-                    "Default Outstation: ₹300 Base + ₹30/km • Wait ₹2/min (editable in Direct Meter Settings)"
+                    "Default Outstation: ₹300 Base + ₹30/km (editable in Direct Meter Settings)"
             }
             Text(
                 text = preview,
@@ -1240,7 +1300,9 @@ private fun CommercialMeterGaugeCard(
                         modifier = Modifier.weight(1f)
                     )
                     val isDirect = tripState.meterMode == SangamTariffConfig.METER_MODE_DIRECT
-                    val isDirectHourly = isDirect && SangamTariffConfig.DirectMeterCategory.fromId(tripState.directCategoryId) == SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL
+                    val directCat = SangamTariffConfig.DirectMeterCategory.fromId(tripState.directCategoryId)
+                    val isDirectHourly = isDirect && directCat == SangamTariffConfig.DirectMeterCategory.HOURLY_RENTAL
+                    val isDirectOutstation = isDirect && directCat == SangamTariffConfig.DirectMeterCategory.OUTSTATION
                     val middleLabel = when {
                         isDirectHourly -> "HOURS"
                         isDirect -> "WAIT"
@@ -1249,6 +1311,7 @@ private fun CommercialMeterGaugeCard(
                     }
                     val middleVal = when {
                         isDirectHourly -> "${tripState.billableHours}h"
+                        isDirectOutstation -> "Manual"
                         isDirect -> {
                             val wMin = tripState.waitingSeconds / 60
                             val wSec = tripState.waitingSeconds % 60

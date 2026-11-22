@@ -193,13 +193,13 @@ fun DirectMeterSettingsScreen(
                 )
             }
 
-            // Waiting Charge Card
+            // Waiting Charge Card (Local only — Outstation uses manual Additional Charges)
             DirectTariffSectionCard(
-                title = "DIRECT METER WAITING CHARGE",
-                subtitle = "Default: ₹2 / minute when stationary (Local & Outstation)"
+                title = "LOCAL WAITING CHARGE",
+                subtitle = "Default: ₹2 / minute when stationary (Local only — use Additional Charges for Outstation)"
             ) {
                 DirectRateField(
-                    label = "Waiting Charge (₹ / min)",
+                    label = "Local Waiting Charge (₹ / min)",
                     value = waitingPerMinText,
                     onValueChange = { waitingPerMinText = it; savedToast = null },
                     testTag = "direct_waiting_rate_input"
